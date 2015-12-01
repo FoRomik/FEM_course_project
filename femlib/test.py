@@ -59,6 +59,26 @@ def testNaiveAssembly():
 	print a.globalfMat
 
 
+def testbkEuler():
+        N = 4
+        K = np.random.random((N,N))
+        M = np.random.random((N,N))
+        
+        F0 = np.zeros([4,1])
+        U0 = np.ones([4,1])
+        delta_t = 1.0
+        numpy_sol = np.linalg.solve(M+delta_t*K, delta_t*F0 + np.dot(M, U0))
+        
+        import solver
+        solver.K = K ; solver.M = M ; solver.F0 = F0 ; solver.U0 = U0 ; solver.Delta_t = delta_t
+        solver.LAPACK_PATH = '/usr/lib/lapack'
+        solver.fort_compile()
+        fort_sol = solver.bkEuler()
+        
+        print numpy_sol
+        print '\n\n---------------\n\n'
+        print fort_sol[0]
+
 def testPoisson():
 	f = lambda node: 1.0
 	a = Assemb(Mesh = m, f = f)
@@ -123,5 +143,6 @@ if __name__ == '__main__':
 	#testShapeFnPlot()		
 	#testNaiveAssembly()
 	#testPoisson()
-	testErrorScaling()
+	#testErrorScaling()
+	testbkEuler()
 plt.show()

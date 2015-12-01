@@ -10,7 +10,7 @@ import matplotlib.tri as mpl_tri
 
 
 def importInitMesh(matfile = 'initdata.mat'):
-	# import mesh data from matlab data file
+        # import mesh data from matlab data file
 	data = sio.loadmat(matfile)
 	points = data['p']
 	edges = data['e']
