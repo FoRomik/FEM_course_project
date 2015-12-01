@@ -107,7 +107,7 @@ class ShapeFn:
 		T = np.append(vertices, np.array([[1],[1],[1]]), axis = 1)
 		area = np.linalg.det(T)
 		return area
-
+	
 	def getSupport(self, Node):
 		NodeIndex = np.where(self.Mesh.Nodes == Node)[0][0]		
 		elems = np.where(self.Mesh.Elements == NodeIndex)[0]
@@ -156,10 +156,17 @@ class ShapeFn:
 		elem_area = self.__getElemArea()
 		f_val = []
 		[f_val.append(f(node)) for node in self.Mesh.Nodes[self.Element]]		
-		ret =  (2*elem_area/18.) * np.sum(np.array(f_val))
-		ret = ret * np.ones(3)
+		ret =  (2*elem_area/18.) * np.sum(np.array(f_val)) * np.ones(3)
 		return ret
-
+		
+        def fMatElement_nonlin(self, f, u_Node):
+                # here f is a function of u
+                elem_area = self.__getElemArea()
+                f_val = []
+                for i in range(3): f_val.append(f(u_Node[self.Element[i]]))
+                ret =  (2*elem_area/18.) * np.sum(np.array(f_val)) * np.ones(3)
+		return ret
+                
 
 
 class Assemb:
@@ -188,6 +195,9 @@ class Assemb:
 	def AssembMat_fast(self):
 		#TODO: sparsify and vectorize
 		pass		
+
+
+
 
 
 

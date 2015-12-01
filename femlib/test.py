@@ -64,8 +64,8 @@ def testbkEuler():
         K = np.random.random((N,N))
         M = np.random.random((N,N))
         
-        F0 = np.zeros([4,1])
-        U0 = np.ones([4,1])
+        F0 = np.zeros([N,1])
+        U0 = np.ones([N,1])
         delta_t = 1.0
         numpy_sol = np.linalg.solve(M+delta_t*K, delta_t*F0 + np.dot(M, U0))
         
@@ -78,7 +78,9 @@ def testbkEuler():
         print numpy_sol
         print '\n\n---------------\n\n'
         print fort_sol[0]
-
+        print '\n\n'
+        
+        
 def testPoisson():
 	f = lambda node: 1.0
 	a = Assemb(Mesh = m, f = f)
