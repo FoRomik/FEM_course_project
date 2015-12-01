@@ -9,38 +9,32 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.tri as mpl_tri
 
 
-def importInitMesh(matfile = 'initdata.mat'):
+def importInitMesh(matfile = None):
         # import mesh data from matlab data file
 	data = sio.loadmat(matfile)
 	points = data['p']
-	edges = data['e']
 	triangles = data['t']
 	
 	# convert to python format
 	points = np.transpose(points)
-	edges = np.transpose(edges[0:2,:])
 	triangles = np.transpose(triangles[0:3,:])
 
 	points = points.astype('float')
-	edges = edges.astype('int')
 	triangles = triangles.astype('int')
 
-	# fix array index numbering for python	
-	for i in range(len(edges)):
-		edges[i,0] -=1 	
-		edges[i,1] -=1
+	# fix array index numbering for python
 	for i in range(len(triangles)):
 		triangles[i,0] -=1
 		triangles[i,1] -=1
 		triangles[i,2] -=1
 
-	return (points, edges, triangles)	
+	return (points, triangles)	
 
 
 class Mesh:
 	def __init__(self, K0):
 		self.Nodes = K0[0]
-		self.Elements = K0[2]
+		self.Elements = K0[1]
 		self.NumNodes = len(self.Nodes)
 		self.NumElements = len(self.Elements)
 		self.EdgeMatrix = np.zeros([self.NumNodes, self.NumNodes], np.int32) 	
@@ -247,7 +241,7 @@ class Plot:
 		 		              linewidth = 1, marker = 'o', markersize = 5, color = 'red') 
 
 
-	def patternPlot(self, u_Node, showGrid = True):
+	def patternPlot(self, u_Node, showGrid = False):
 		if u_Node.shape[0] == self.Mesh.NumNodes: u_Node = u_Node.flatten()		
 		t = mpl_tri.Triangulation(self.Mesh.Nodes[:,0], self.Mesh.Nodes[:,1], self.Mesh.Elements)
 		self.ax.tripcolor(t, u_Node, shading='interp1', cmap=plt.cm.rainbow)

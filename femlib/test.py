@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+import os
+
 import numpy as np
 import scipy as scp
 from scipy import stats
@@ -8,8 +10,12 @@ from mpl_toolkits.mplot3d import Axes3D
 from fem import *
 
 
-K0 = importInitMesh()
+testdata_dir = '/home/tanmoy/projects/FEM_course_project/code/testdata'
+
+K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
 m = Mesh(K0)
+#m.refineMesh()
+#m.refineMesh()
 
 def testMesh():
 	ax = plt.subplot(111)
@@ -94,40 +100,48 @@ def testPoisson():
 	p.patternPlot(u_Node = u, showGrid = False)
 	
 
-def testErrorScaling():
-	matfile_fmt = 'testmesh%d.dat'
-	diams = np.array([0.5, 0.4, 0.3, 0.2, 0.1])
+def testErrorScaling(showPlots = False):
+	matfile_fmt = os.path.join(testdata_dir, 'testmesh%d.dat')
+	outfile_fmt = os.path.join(testdata_dir, 'testfem%d.dat')
+	diams = np.array([0.1, 0.08, 0.04, 0.06, 0.02])
 	err = np.zeros(len(diams))	
 		
-	f_exact = lambda node: np.cos(node[0]**2. + node[1]**2. - 1) #trial function		
-	f = lambda node: -4*( (node[0]**2+node[1]**2)*np.cos(node[0]**2. + node[1]**2. - 1) + np.sin(node[0]**2. + node[1]**2. - 1))
+	 # test for the function u(x,y) = arctan(y/x) 
+        # which has du/dr = 0 at the boundaries
+        			
+	f_exact = lambda p : p[0]**2.+p[1]**2. - 2*np.sqrt(p[0]**2.+p[1]**2.)		
+	f = lambda p : 4 - 2./np.sqrt(p[0]**2.+p[1]**2.)
 
 	for i, h in enumerate(diams):
 		matfile = matfile_fmt % i
 		
 		# fem solution	
-		print 'Solving FEM problem form mesh dia = ', h		
 		K = importInitMesh(matfile)
-		mesh = Mesh(K)
+		mesh = Mesh(K);
 		a = Assemb(Mesh = mesh, f = f)
 		a.AssembMat_naive()
 		K = a.globalStiffMat
 		F = a.globalfMat
 		u = np.linalg.solve(K,F)
+                np.savetxt(outfile_fmt % i, u)
+                
+                print mesh.NumNodes, mesh.Elements.shape, u.shape
 
 		# exact solution		
 		u_exact = np.zeros(mesh.NumNodes)
 		for j in range(mesh.NumNodes):
 			u_exact[j] = f_exact(mesh.Nodes[i])
 		
-		#p = Plot(Mesh = mesh)
-		#p.ax = ax1; p.patternPlot(u_exact); ax1.set_title('Exact')
-		#p.ax = ax2; p.patternPlot(u); ax2.set_title('FEM')
-		#plt.show()
+		if showPlots:
+	        	ax1 = plt.subplot(121) ; ax2 = plt.subplot(122)
+		        p = Plot(Mesh = mesh)
+        		p.ax = ax1; p.patternPlot(u_exact); ax1.set_title('Exact')
+        		p.ax = ax2; p.patternPlot(u); ax2.set_title('FEM')
+        		plt.show()
 	
-
 		# error
 		err[i] = np.linalg.norm(u_exact - u)
+	        print '\nFEM: Mesh_diameter = %g, Error = %g\n' % (h, err[i])
 	
 	plt.scatter(1./diams, err, marker = 'o', color = 'red', label = r'$L^2$' + ' norm of error')
 	plt.xscale('log'); plt.yscale('log')
@@ -145,6 +159,6 @@ if __name__ == '__main__':
 	#testShapeFnPlot()		
 	#testNaiveAssembly()
 	#testPoisson()
-	#testErrorScaling()
-	testbkEuler()
+	testErrorScaling(showPlots = True)
+	#testbkEuler()
 plt.show()
