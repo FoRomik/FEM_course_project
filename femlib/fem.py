@@ -168,10 +168,16 @@ class Assemb:
 		self.Mesh = Mesh
 		self.f = f
 	
+	def getAllElementAreas(self):
+	        areas = np.zeros(len(self.Mesh.Elements))
+	        for i, T in enumerate(self.Mesh.Elements):
+	                areas[i] = ShapeFn(Mesh = self.Mesh, Element = T).__getElemArea()
+	        return areas
+	
 	def AssembMat_naive(self):
 		self.globalStiffMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])
 		self.globalMassMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])		
-		self.globalfMat = np.zeros([self.Mesh.NumNodes,1])	
+		if not f is None: self.globalfMat = np.zeros([self.Mesh.NumNodes,1])	
 		for T in self.Mesh.Elements:
 			elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
 			elemStiffMat = elemShapeFn.StiffMatElement_P1()
@@ -179,7 +185,7 @@ class Assemb:
 			elemfMat = elemShapeFn.fMatElement_P1(f = self.f)
 			
 			for i, nodeI in enumerate(T):
-				self.globalfMat[nodeI] += elemfMat[i]
+				if not f is None: self.globalfMat[nodeI] += elemfMat[i]
 				for j, nodeJ in enumerate(T):
 					self.globalStiffMat[nodeI, nodeJ] += elemStiffMat[i, j]
 					self.globalMassMat[nodeI, nodeJ] += elemMassMat[i, j]
@@ -246,3 +252,4 @@ class Plot:
 		t = mpl_tri.Triangulation(self.Mesh.Nodes[:,0], self.Mesh.Nodes[:,1], self.Mesh.Elements)
 		self.ax.tripcolor(t, u_Node, shading='interp1', cmap=plt.cm.rainbow)
 		if showGrid: self.plotMesh()
+		 

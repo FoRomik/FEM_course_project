@@ -40,6 +40,7 @@ SUBROUTINE ASSEMBF(F, U, N, Elements, Areas, NElements)
  
  EXTERNAL :: CALCF2
  REAL(8), INTENT(INOUT), DIMENSION(0:N-1,1) :: F
+ !f2py intent (in,out) :: F
  
  INTEGER :: I, T
  REAL(8) :: F_ELEMENT, F_VAL
@@ -133,6 +134,7 @@ K = None
 F0 = None
 U0 = None
 Delta_t = None
+ElemAreas = None
 recompile = True
 LAPACK_PATH = None
 
@@ -148,7 +150,7 @@ def fort_compile():
 
 def bkEuler():
 	import bkeuler
-	F,U, Flag = bkeuler.bkeuler(m = M, k = K, f0 = F0, u0 = U0, delta_t = Delta_t)
+	F,U, Flag = bkeuler.bkeuler(m = M, k = K, f0 = F0, u0 = U0, delta_t = Delta_t, areas = ElemAreas)
         if not Flag:
                 print "Solution did not converge in max # of iterations"
         
