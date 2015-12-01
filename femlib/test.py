@@ -58,8 +58,9 @@ def testElementMat():
 
 def testNaiveAssembly():
 	f = lambda node : node[0] + node[1]
-	a = Assemb(Mesh = m, f = f)
+	a = Assemb(Mesh = m)
 	a.AssembMat_naive()
+	a.AssembRHSVec(f =f)
 	print a.globalStiffMat
 	print a.globalMassMat
 	print a.globalfMat
@@ -89,7 +90,7 @@ def testbkEuler():
         
 def testPoisson():
 	f = lambda node: 1.0
-	a = Assemb(Mesh = m, f = f)
+	a = Assemb(Mesh = m)
 	a.AssembMat_naive()
 	K = a.globalStiffMat
 	F = a.globalfMat
@@ -118,7 +119,8 @@ def testErrorScaling(showPlots = False):
 		# fem solution	
 		K = importInitMesh(matfile)
 		mesh = Mesh(K);
-		a = Assemb(Mesh = mesh, f = f)
+		a = Assemb(Mesh = mesh)
+		a.AssembRHSVec(f=f)
 		a.AssembMat_naive()
 		K = a.globalStiffMat
 		F = a.globalfMat

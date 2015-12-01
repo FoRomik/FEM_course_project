@@ -96,7 +96,7 @@ class ShapeFn:
 		self.Element = Element
 		self.Mesh = Mesh
 
-	def __getElemArea(self):
+	def getElemArea(self):
 		vertices = self.Mesh.Nodes[self.Element]
 		T = np.append(vertices, np.array([[1],[1],[1]]), axis = 1)
 		area = np.linalg.det(T)
@@ -131,7 +131,7 @@ class ShapeFn:
 			       [1., 0.],
 			       [0., 1.] ])
 
-		elem_area = self.__getElemArea()
+		elem_area = self.getElemArea()
 		g = np.mat(g); I = np.mat(I); 
 		G = np.linalg.inv(g) * I	
 		ret = 0.5* elem_area * G * np.transpose(G)
@@ -142,12 +142,12 @@ class ShapeFn:
 		x = np.array([ [2,1,1],
 			       [1,2,1],
 			       [1,1,2] ])
-		elem_area = self.__getElemArea()
+		elem_area = self.getElemArea()
 		ret = 0.5 * elem_area * x / 24.
 		return ret
 
 	def fMatElement_P1(self, f):
-		elem_area = self.__getElemArea()
+		elem_area = self.getElemArea()
 		f_val = []
 		[f_val.append(f(node)) for node in self.Mesh.Nodes[self.Element]]		
 		ret =  (2*elem_area/18.) * np.sum(np.array(f_val)) * np.ones(3)
@@ -155,7 +155,7 @@ class ShapeFn:
 		
         def fMatElement_nonlin(self, f, u_Node):
                 # here f is a function of u
-                elem_area = self.__getElemArea()
+                elem_area = self.getElemArea()
                 f_val = []
                 for i in range(3): f_val.append(f(u_Node[self.Element[i]]))
                 ret =  (2*elem_area/18.) * np.sum(np.array(f_val)) * np.ones(3)
@@ -164,39 +164,35 @@ class ShapeFn:
 
 
 class Assemb:
-	def __init__(self, Mesh = None, f = None):
+	def __init__(self, Mesh = None):
 		self.Mesh = Mesh
-		self.f = f
 	
 	def getAllElementAreas(self):
+	        shapefunc = ShapeFn(Mesh = self.Mesh)
 	        areas = np.zeros(len(self.Mesh.Elements))
 	        for i, T in enumerate(self.Mesh.Elements):
-	                areas[i] = ShapeFn(Mesh = self.Mesh, Element = T).__getElemArea()
+	                shapefunc.Element = T
+	                areas[i] = shapefunc.getElemArea()
 	        return areas
 	
 	def AssembMat_naive(self):
 		self.globalStiffMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])
 		self.globalMassMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])		
-		if not f is None: self.globalfMat = np.zeros([self.Mesh.NumNodes,1])	
 		for T in self.Mesh.Elements:
 			elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
 			elemStiffMat = elemShapeFn.StiffMatElement_P1()
 			elemMassMat = elemShapeFn.MassMatElement_P1()
-			elemfMat = elemShapeFn.fMatElement_P1(f = self.f)
 			
 			for i, nodeI in enumerate(T):
-				if not f is None: self.globalfMat[nodeI] += elemfMat[i]
 				for j, nodeJ in enumerate(T):
 					self.globalStiffMat[nodeI, nodeJ] += elemStiffMat[i, j]
 					self.globalMassMat[nodeI, nodeJ] += elemMassMat[i, j]
 
-
-
-	def AssembMat_fast(self):
-		#TODO: sparsify and vectorize
-		pass		
-
-
+	def AssembRHSVec(self, f):
+		self.globalfMat = np.zeros([self.Mesh.NumNodes,1])	
+                elemfMat = elemShapeFn.fMatElement_P1(f = f)
+                for i, nodeI in enumerate(self.Mesh.Elements):
+		        self.globalfMat[nodeI] += elemfMat[i]
 
 
 

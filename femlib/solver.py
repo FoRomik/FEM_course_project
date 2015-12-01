@@ -20,11 +20,13 @@ SUBROUTINE CALCF2(U, f_val, I, N)
  IF (I<N/2) THEN 
   u1 = U(I,1)
   u2 = U(I+N/2,1)
-  ! F_VAL = f(u1,u2)
+  !F_VAL = f(u1,u2)
+  F_VAL = -u1
  ELSE 
   u2 = U(I,1)
   u1 = U(I-N/2,1)
   ! F_VAL = g(u1,u2)
+  F_VAL = -u2
  ENDIF
  
 END SUBROUTINE
@@ -45,7 +47,7 @@ SUBROUTINE ASSEMBF(F, U, N, Elements, Areas, NElements)
  INTEGER :: I, T
  REAL(8) :: F_ELEMENT, F_VAL
  
- ! zero the Fs
+  ! zero the Fs
  F_ELEMENT = 0.0
  DO I = 0, N-1
         F(I,1) = 0.0
@@ -68,7 +70,8 @@ END SUBROUTINE
 SUBROUTINE BKEULER(M, K, F0, U0, Delta_t, N, F, U , FLAG, Elements, Areas, NElements)
  IMPLICIT NONE
 	
- ! i/o variables	
+ ! i/o variables
+ 	
  INTEGER, INTENT(IN) :: N, NElements
  REAL(8), INTENT(IN) :: Delta_t
  REAL(8), INTENT(IN), DIMENSION(0:N-1, 1) :: F0, U0
@@ -87,6 +90,7 @@ SUBROUTINE BKEULER(M, K, F0, U0, Delta_t, N, F, U , FLAG, Elements, Areas, NElem
  REAL(8) :: CURR_TOL, NORM0, NORM
  REAL(8), DIMENSION(0:N-1, 0:N-1) :: A, A_LAPACK
  REAL(8), DIMENSION(0:N-1, 1) :: bf, b0, U_old, F_old, pivot
+ 
  
  TOL = 1E-3
  MAXITER = 10
@@ -117,6 +121,7 @@ SUBROUTINE BKEULER(M, K, F0, U0, Delta_t, N, F, U , FLAG, Elements, Areas, NElem
   F_old = F
   U_old = U
   ITER = ITER + 1
+  
   IF (ITER >= MAXITER) THEN 
    FLAG = 0
    EXIT
@@ -128,14 +133,18 @@ END SUBROUTINE
 '''
 
 
+
 # specify these before calling bkEuler
 M = None
 K = None
 F0 = None
 U0 = None
 Delta_t = None
+
+Elements = None
 ElemAreas = None
-recompile = True
+
+recompile = False
 LAPACK_PATH = None
 
 #compile fort code
@@ -150,7 +159,7 @@ def fort_compile():
 
 def bkEuler():
 	import bkeuler
-	F,U, Flag = bkeuler.bkeuler(m = M, k = K, f0 = F0, u0 = U0, delta_t = Delta_t, areas = ElemAreas)
+	F,U, Flag = bkeuler.bkeuler(m = M, k = K, f0 = F0, u0 = U0, delta_t = Delta_t, elements = Elements, areas = ElemAreas)
         if not Flag:
                 print "Solution did not converge in max # of iterations"
         
