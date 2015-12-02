@@ -3,19 +3,20 @@
 import os
 import numpy as np
 from femlib import fem, solver
+import matplotlib.pyplot as plt
 
 # compile background fortran 
 solver.recompile = True
 solver.fort_compile()
-import bkeuler
+import fortsolve
 
 # problem parameters
-D1 = 1. 
+D1 = 1e-5 
 D2 = 1.
-#f = 
-#g = 
-delta_t = 0.1 
-NTime = 10 
+u1_init = lambda x,y : 1.0
+u2_init = lambda x,y : 100.0
+delta_t = 0.001 
+NTime = 10
 
 # data locations
 initmeshfile = './testdata/testmesh0.mat'
@@ -29,11 +30,10 @@ LAPACK_PATH = '/usr/lib/lapack'
 # generate mesh and shapefunction space
 mesh0 = fem.importInitMesh(matfile = initmeshfile)
 K = fem.Mesh(mesh0)
+#K.refineMesh()
 P = fem.ShapeFn(Mesh = K, Element = None)
 
 # setup initial condition on mesh
-u1_init = lambda x,y : x**2. + y**2. 
-u2_init = lambda x,y : 1.0
 U10 = np.zeros([K.NumNodes,1])
 U20 = np.zeros([K.NumNodes,1])
 for i in range(K.NumNodes):
@@ -55,7 +55,7 @@ M2 = np.array(np.bmat([[M, zero], [zero, M]]))
 
 # assembling the initial right hand side (directly for 2 component system)
 F20 = np.zeros([2*K.NumNodes,1])
-F20 = bkeuler.assembf(f = F20, u = U0, elements = K.Elements, areas = Areas)
+F20 = fortsolve.assembf(f = F20, u = U0, elements = K.Elements, areas = Areas)
 
 # initiate solver
 solver.K = W2 
@@ -67,7 +67,6 @@ solver.Delta_t = delta_t
 # start the time loop
 U = U0
 F = F20
-#TODO: check why the solver is not entering the subroutine bkeuler()
 for i in range(NTime):
         print 'Time Iteration: ', i
         solver.U0 = U
@@ -78,4 +77,12 @@ for i in range(NTime):
         # log data
         np.savetxt(outfile_fmt % i, U)
         
-
+        
+# animation of patterns
+datafilelist = []
+[datafilelist.append(outfile_fmt % n) for n in range(NTime)]
+fig = plt.figure(facecolor = 'w', edgecolor = 'w', figsize = (4,4))
+ax = fig.add_subplot(1,1,1)
+p = fem.Plot(Mesh = K, ax = ax)
+p.patternAnimate(dataFileList = datafilelist)
+plt.show()

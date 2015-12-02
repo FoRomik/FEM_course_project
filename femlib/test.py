@@ -92,6 +92,7 @@ def testPoisson():
 	f = lambda node: 1.0
 	a = Assemb(Mesh = m)
 	a.AssembMat_naive()
+	a.AssembRHSVec(f = f)
 	K = a.globalStiffMat
 	F = a.globalfMat
 	u = np.linalg.solve(K,F)
@@ -102,8 +103,8 @@ def testPoisson():
 	
 
 def testErrorScaling(showPlots = False):
-	matfile_fmt = os.path.join(testdata_dir, 'testmesh%d.dat')
-	outfile_fmt = os.path.join(testdata_dir, 'testfem%d.dat')
+	matfile_fmt = os.path.join(testdata_dir, 'testmesh%d.mat')
+	outfile_fmt = os.path.join(testdata_dir, 'testfem%d.mat')
 	diams = np.array([0.1, 0.08, 0.04, 0.06, 0.02])
 	err = np.zeros(len(diams))	
 		
@@ -161,6 +162,6 @@ if __name__ == '__main__':
 	#testShapeFnPlot()		
 	#testNaiveAssembly()
 	#testPoisson()
-	testErrorScaling(showPlots = True)
+	testErrorScaling(showPlots = False)
 	#testbkEuler()
 plt.show()

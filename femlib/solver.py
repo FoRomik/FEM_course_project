@@ -93,9 +93,9 @@ SUBROUTINE BKEULER(M, K, F0, U0, Delta_t, N, F, U , FLAG, Elements, Areas, NElem
  
  
  TOL = 1E-3
- MAXITER = 10
+ MAXITER = 100
 
- FLAG = 1
+ FLAG = 0
  CURR_TOL = 1.0
  ITER = 0
  A = M + Delta_t*K
@@ -123,11 +123,18 @@ SUBROUTINE BKEULER(M, K, F0, U0, Delta_t, N, F, U , FLAG, Elements, Areas, NElem
   ITER = ITER + 1
   
   IF (ITER >= MAXITER) THEN 
-   FLAG = 0
+   FLAG = 1
    EXIT
   ENDIF	
  
  END DO
+
+ IF (FLAG == 0) THEN
+  WRITE(*,*) 'ITERATIONS =', ITER
+  WRITE(*,*) 'FINAL ERROR =', CURR_TOL
+ ELSE
+  WRITE(*,*) 'SOLUTION DID NOT CONVERGE IN MAX # OF ITERATIONS'
+ ENDIF 
 
 END SUBROUTINE
 '''
@@ -151,17 +158,15 @@ LAPACK_PATH = None
 def fort_compile():
         if not os.path.isfile('bkeuler.so') or recompile:
                 fortcode = file('bkeuler.f90', 'w'). write(fort_src)
-                cmdstring = 'f2py -L%s -llapack -c -m bkeuler bkeuler.f90 --fcompiler=gfortran' % LAPACK_PATH
+                cmdstring = 'f2py -L%s -llapack -c -m fortsolve bkeuler.f90 --fcompiler=gfortran' % LAPACK_PATH
                 os.system(cmdstring)
                 for this_file in ['bkeuler.f90', 'bkeuler.o']:
 	                if os.path.isfile(this_file): os.remove(this_file)
 
 
 def bkEuler():
-	import bkeuler
-	F,U, Flag = bkeuler.bkeuler(m = M, k = K, f0 = F0, u0 = U0, delta_t = Delta_t, elements = Elements, areas = ElemAreas)
-        if not Flag:
-                print "Solution did not converge in max # of iterations"
+	import fortsolve
+	F,U, Flag = fortsolve.bkeuler(m = M, k = K, f0 = F0, u0 = U0, delta_t = Delta_t, elements = Elements, areas = ElemAreas)
         
         return U, F
 

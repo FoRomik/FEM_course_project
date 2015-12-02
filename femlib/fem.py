@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import os
+import os, time
 import numpy as np
 import scipy.io as sio
 
@@ -189,10 +189,12 @@ class Assemb:
 					self.globalMassMat[nodeI, nodeJ] += elemMassMat[i, j]
 
 	def AssembRHSVec(self, f):
-		self.globalfMat = np.zeros([self.Mesh.NumNodes,1])	
-                elemfMat = elemShapeFn.fMatElement_P1(f = f)
-                for i, nodeI in enumerate(self.Mesh.Elements):
-		        self.globalfMat[nodeI] += elemfMat[i]
+		self.globalfMat = np.zeros([self.Mesh.NumNodes,1])
+                for T in self.Mesh.Elements:
+                        elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
+                        elemfMat = elemShapeFn.fMatElement_P1(f = f)
+                        for i, nodeI in enumerate(T):
+		                self.globalfMat[nodeI] += elemfMat[i]
 
 
 
@@ -244,8 +246,32 @@ class Plot:
 
 
 	def patternPlot(self, u_Node, showGrid = False):
-		if u_Node.shape[0] == self.Mesh.NumNodes: u_Node = u_Node.flatten()		
+		u_Node = u_Node.flatten()		
 		t = mpl_tri.Triangulation(self.Mesh.Nodes[:,0], self.Mesh.Nodes[:,1], self.Mesh.Elements)
-		self.ax.tripcolor(t, u_Node, shading='interp1', cmap=plt.cm.rainbow)
+		pattern = self.ax.tripcolor(t, u_Node, shading='interp1', cmap=plt.cm.jet)
+		cbar = plt.colorbar(pattern, ax = self.ax)
+	        cbar.set_clim(vmin = u_Node.min(), vmax = u_Node.max())
+	        cbar.draw_all()
 		if showGrid: self.plotMesh()
-		 
+		
+	def patternAnimate(self, dataFileList):
+	        t = mpl_tri.Triangulation(self.Mesh.Nodes[:,0], self.Mesh.Nodes[:,1], self.Mesh.Elements)
+	        u0 = np.loadtxt(dataFileList[0]).flatten()
+	        u0 = u0[:self.Mesh.NumNodes]
+	        
+	        for i, dataFile in enumerate(dataFileList):
+	             if i == 0:
+	                pattern = self.ax.tripcolor(t, u0, shading = 'interp1', cmap = plt.cm.jet)
+	                cbar = plt.colorbar(pattern, ax = self.ax)
+	                cbar.set_clim(vmin = u0.min(), vmax = u0.max())
+	                cbar.draw_all()
+	                self.ax.set_title('Time = %d'% i)
+	             else:
+	                u = np.loadtxt(dataFile).flatten()
+	                u = u[:self.Mesh.NumNodes]
+	                pattern.set_array(u)
+	                cbar.set_clim(vmin = u.min(), vmax = u.max())
+	                cbar.draw_all()
+	                self.ax.set_title('Time = %d' % i)
+	             plt.pause(0.5)
+		     
