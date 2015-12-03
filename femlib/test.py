@@ -12,19 +12,30 @@ from fem import *
 
 testdata_dir = '/home/tanmoy/projects/FEM_course_project/code/testdata'
 
-K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
-m = Mesh(K0)
-#m.refineMesh()
-#m.refineMesh()
 
 def testMesh():
-	ax = plt.subplot(111)
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+        m = Mesh(K0)
+        
+        m.NeumannEdges = m.BoundaryEdges 
+        m.NeumannEdges = np.delete(m.NeumannEdges, 0, 0)
+        m.NeumannEdges = np.delete(m.NeumannEdges, 14, 0)
+        m.NumNeumannEdges = len(m.NeumannEdges)
+       
+        m.DirEdges = np.array([[0,8], [0,15]])
+        m.NumDirEdges = len(m.DirEdges)
+        
+	ax1 = plt.subplot(121); ax2 = plt.subplot(122)
+	p = Plot(Mesh = m)
+	p.ax = ax1; p.plotBoundaries()
+	
 	m.refineMesh()
-	p = Plot(Mesh = m, ax = ax)	
-	p.plotMesh()
+	p.ax = ax2; p.plotBoundaries()
 
 
 def testShapeFnPlot():	
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+        m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	fig = plt.figure()
 	ax3d = Axes3D(fig)
 	Node = m.Nodes[22]
@@ -33,15 +44,20 @@ def testShapeFnPlot():
 
 
 def testPatternPlot():
+	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+        m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
+	m.refineMesh();m.refineMesh()
 	ax = plt.subplot(111)
 	u = np.zeros(m.NumNodes)
 	for i in range(m.NumNodes):
 		u[i] = np.cos(m.Nodes[i,0] + m.Nodes[i,1])
-	p = Plot(Mesh = m, ax = ax, u_Node = u)
-	p.patternPlot()
+	p = Plot(Mesh = m, ax = ax)
+	p.patternPlot(u_Node = u)
 
 
 def testElementMat():
+	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+        m = Mesh(K0)
 	T = m.Elements[22]	
 	s = ShapeFn(Mesh = m, Element = T)
 	stiffmat = s.StiffMatElement_P1()
@@ -57,6 +73,8 @@ def testElementMat():
 
 
 def testNaiveAssembly():
+	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+        m = Mesh(K0)
 	f = lambda node : node[0] + node[1]
 	a = Assemb(Mesh = m)
 	a.AssembMat_naive()
@@ -65,30 +83,10 @@ def testNaiveAssembly():
 	print a.globalMassMat
 	print a.globalfMat
 
-
-def testbkEuler():
-        N = 4
-        K = np.random.random((N,N))
-        M = np.random.random((N,N))
-        
-        F0 = np.zeros([N,1])
-        U0 = np.ones([N,1])
-        delta_t = 1.0
-        numpy_sol = np.linalg.solve(M+delta_t*K, delta_t*F0 + np.dot(M, U0))
-        
-        import solver
-        solver.K = K ; solver.M = M ; solver.F0 = F0 ; solver.U0 = U0 ; solver.Delta_t = delta_t
-        solver.LAPACK_PATH = '/usr/lib/lapack'
-        solver.fort_compile()
-        fort_sol = solver.bkEuler()
-        
-        print numpy_sol
-        print '\n\n---------------\n\n'
-        print fort_sol[0]
-        print '\n\n'
-        
         
 def testPoisson():
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+        m = Mesh(K0)
 	f = lambda node: 1.0
 	a = Assemb(Mesh = m)
 	a.AssembMat_naive()
@@ -162,6 +160,6 @@ if __name__ == '__main__':
 	#testShapeFnPlot()		
 	#testNaiveAssembly()
 	#testPoisson()
-	testErrorScaling(showPlots = False)
+	#testErrorScaling(showPlots = False)
 	#testbkEuler()
 plt.show()

@@ -13,30 +13,45 @@ def importInitMesh(matfile = None):
         # import mesh data from matlab data file
 	data = sio.loadmat(matfile)
 	points = data['p']
+	edges = data['e']
 	triangles = data['t']
 	
 	# convert to python format
 	points = np.transpose(points)
 	triangles = np.transpose(triangles[0:3,:])
+	edges = np.transpose(edges[0:2])
 
 	points = points.astype('float')
 	triangles = triangles.astype('int')
+	edges = edges.astype('int')
 
 	# fix array index numbering for python
 	for i in range(len(triangles)):
-		triangles[i,0] -=1
-		triangles[i,1] -=1
-		triangles[i,2] -=1
+		triangles[i,0] -= 1
+		triangles[i,1] -= 1
+		triangles[i,2] -= 1
+        for i in range(len(edges)):
+                tmp = edges[i]
+                edges[i,0] -= 1
+                edges[i,1] -=1 
+                edges[i] = edges[i][np.argsort(edges[i])]
 
-	return (points, triangles)	
+	return (points, triangles, edges)	
 
 
 class Mesh:
 	def __init__(self, K0):
 		self.Nodes = K0[0]
 		self.Elements = K0[1]
+		self.BoundaryEdges = K0[2]
+		self.DirEdges = None
+		self.NeumannEdges = None
+		
 		self.NumNodes = len(self.Nodes)
 		self.NumElements = len(self.Elements)
+		self.NumBoundaryEdges = len(self.BoundaryEdges)
+		self.NumDirEdges = 0
+		self.NumNeumannEdges = 0
 		self.EdgeMatrix = np.zeros([self.NumNodes, self.NumNodes], np.int32) 	
 		
 		for element in self.Elements:
@@ -46,15 +61,36 @@ class Mesh:
 				j = np.max(pair)
 				self.EdgeMatrix[i,j] = 1
 
-
+	def setNeumannBoundary(self):
+	        # to be defined by the problem
+	        pass
+	
+	def setDirBoundary(self):
+	        # to be defined by the problem
+	        pass
+	
+	def loadBoundaries(self):
+	        self.DirEdges = self.setDirBoundary()
+	        self.NeumannEdges = self.setNeumannBoundary()
+	        if not self.DirEdges is None: self.NumDirEdges = len(self.DirEdges)
+	        if not self.NeumannEdges is None: self.NumNeumannEdges = len(self.NeumannEdges)
+	        # free overall boundary attributes
+	        del self.BoundaryEdges
+	        del self.NumBoundaryEdges
+	        
 	def refineMesh(self):
 		current_Elements = self.Elements
+                current_DirEdges = self.DirEdges
+                current_NeumannEdges = self.NeumannEdges
 		current_EdgeMatrix = self.EdgeMatrix
 		current_NumNodes = self.NumNodes
 		current_NumElements = self.NumElements
+		current_NumDirEdges = self.NumDirEdges
+		current_NumNeumannEdges = self.NumNeumannEdges
 
 		for T in current_Elements:
-			# divide element into 4 triangles			
+			# divide element into 4 triangles
+			n0 = T[0]; n1 = T[1]; n2 = T[2]			
 			p0 = self.Nodes[T[0], :]; p1 = self.Nodes[T[1], :]; p2 = self.Nodes[T[2], :]
 			p01 = 0.5*(p0+p1); p12 = 0.5*(p1+p2); p20 = 0.5*(p2+p0)		
 			
@@ -63,31 +99,75 @@ class Mesh:
 			self.Nodes = np.append(self.Nodes, np.array([p12]), axis = 0)
 			self.Nodes = np.append(self.Nodes, np.array([p20]), axis = 0)		
 			self.NumNodes = len(self.Nodes)
+			n01 = self.NumNodes-3; n12 = self.NumNodes-2; n20 = self.NumNodes-1
 
-			# update edges
+			# update edgematrix
 			current_EdgeMatrix[T[0], T[1]] = 0
 			current_EdgeMatrix[T[1], T[2]] = 0
 			current_EdgeMatrix[T[2], T[0]] = 0
 			self.EdgeMatrix = np.zeros([self.NumNodes, self.NumNodes], np.int32)
 			self.EdgeMatrix[0:current_NumNodes, 0:current_NumNodes] = current_EdgeMatrix
-
-			n0 = T[0]; n1 = T[1]; n2 = T[2]
-			n01 = self.NumNodes-3; n12 = self.NumNodes-2; n20 = self.NumNodes-1
 			for e in [[n0,n01], [n01,n20], [n20,n0], [n01,n1], [n1,n12], [n12,n01], [n20,n12], [n12,n2], [n2,n20]]:
 				self.EdgeMatrix[e[0], e[1]] = 1
+			
+			# update Dirichlet edges
+			if self.NumDirEdges !=0:
+			        bset = None
+        			for b_index, b in enumerate(current_DirEdges):
+        			        if b.__contains__(n0) and b.__contains__(n1): 
+        			                bset = np.append(b, n01)
+        			                break
+        			        if b.__contains__(n0) and b.__contains__(n2): 
+        			                bset = np.append(b, n20)
+        			                break
+        			        if b.__contains__(n1) and b.__contains__(n2): 
+        			                bset = np.append(b, n12)
+        			                break
+        			
+        			if not bset is None:
+        			        self.DirEdges = np.delete(self.DirEdges, b_index, 0)
+                			e0 = np.array([bset[0], bset[2]]); e0 = e0[np.argsort(e0)]
+                			e1 = np.array([bset[1], bset[2]]); e1 = e1[np.argsort(e1)]
+                		        self.DirEdges = np.append(self.DirEdges, np.array([e0]), axis = 0)        
+                		        self.DirEdges = np.append(self.DirEdges, np.array([e1]), axis = 0)        
+                			self.NumDirEdges += 1  
+			        
+			# update Neumann edges
+			if self.NumNeumannEdges !=0:
+			        bset = None
+        			for b_index, b in enumerate(current_NeumannEdges):
+        			        if b.__contains__(n0) and b.__contains__(n1): 
+        			                bset = np.append(b, n01)
+        			                break
+        			        if b.__contains__(n0) and b.__contains__(n2): 
+        			                bset = np.append(b, n20)
+        			                break
+        			        if b.__contains__(n1) and b.__contains__(n2): 
+        			                bset = np.append(b, n12)
+        			                break
+        		
+        			if not bset is None:
+        			        self.NeumannEdges = np.delete(self.NeumannEdges, b_index, 0)
+                			e0 = np.array([bset[0], bset[2]]); e0 = e0[np.argsort(e0)]
+                			e1 = np.array([bset[1], bset[2]]); e1 = e1[np.argsort(e1)]
+                		        self.NeumannEdges = np.append(self.NeumannEdges, np.array([e0]), axis = 0)        
+                		        self.NeumannEdges = np.append(self.NeumannEdges, np.array([e1]), axis = 0)        
+                			self.NumNeumannEdges += 1       
 			
 			# update elements
 			T_index = np.where(self.Elements == T)[0][0]
 			self.Elements = np.delete(self.Elements, T_index, 0)
 			for subElem in [[n0,n01,n20], [n01,n1,n12], [n01,n12,n20], [n20,n12,n2]]:
 				self.Elements = np.append(self.Elements, np.array([subElem]), axis = 0)
-			self.NumElements += (4-1)
+			self.NumElements += 3
 
 			# update counts
 			current_NumNodes = self.NumNodes
 			current_EdgeMatrix = self.EdgeMatrix
+			current_DirEdges = self.DirEdges
+			current_NeumannEdges = self.NeumannEdges
 			current_NumElements = self.NumElements
-
+                        
 		
 
 
@@ -107,7 +187,7 @@ class ShapeFn:
 		elems = np.where(self.Mesh.Elements == NodeIndex)[0]
 		support = []
 		for elem in elems:
-			support.append(Mesh.Elements[elem])
+			support.append(self.Mesh.Elements[elem])
 		support = np.array(support)
 		return support	
 
@@ -175,19 +255,24 @@ class Assemb:
 	                areas[i] = shapefunc.getElemArea()
 	        return areas
 	
-	def AssembMat_naive(self):
-		self.globalStiffMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])
-		self.globalMassMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])		
+	def AssembStiffnessMat(self):
+		self.globalStiffMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])	
 		for T in self.Mesh.Elements:
 			elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
 			elemStiffMat = elemShapeFn.StiffMatElement_P1()
-			elemMassMat = elemShapeFn.MassMatElement_P1()
-			
 			for i, nodeI in enumerate(T):
 				for j, nodeJ in enumerate(T):
 					self.globalStiffMat[nodeI, nodeJ] += elemStiffMat[i, j]
+					
+	def AssembMassMat(self):
+	        self.globalMassMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])	
+	        for T in self.Mesh.Elements:
+			elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
+			elemMassMat = elemShapeFn.MassMatElement_P1()
+			for i, nodeI in enumerate(T):
+				for j, nodeJ in enumerate(T):
 					self.globalMassMat[nodeI, nodeJ] += elemMassMat[i, j]
-
+	        	        
 	def AssembRHSVec(self, f):
 		self.globalfMat = np.zeros([self.Mesh.NumNodes,1])
                 for T in self.Mesh.Elements:
@@ -204,19 +289,39 @@ class Plot:
 		self.Mesh = Mesh		
 		self.ax = ax
 	
-	def plotMesh(self):			
-		for i in range(self.Mesh.NumNodes):
-			for j in range(self.Mesh.NumNodes):
-				if not self.Mesh.EdgeMatrix[i,j]: continue
-				src_node = self.Mesh.Nodes[i]
-				tar_node = self.Mesh.Nodes[j]
-				self.ax.plot([src_node[0], tar_node[0]], [src_node[1], tar_node[1]], 
-					     linewidth = 1, marker = 'o', markersize = 5, color = 'black')
-
+	def plotBoundaries(self):		
+	        # plot the interior
+                for i in range(self.Mesh.NumNodes):
+                        for j in range(self.Mesh.NumNodes):
+                                if not self.Mesh.EdgeMatrix[i,j]: continue
+                                src_node = self.Mesh.Nodes[i]
+                                tar_node = self.Mesh.Nodes[j]
+                                clr = 'black'            
+                                self.ax.plot([src_node[0], tar_node[0]], [src_node[1], tar_node[1]], 
+					     color = clr, linewidth = 1, marker = 'o', markersize = 5)
+                # plot the Neumann boundaries
+                if self.Mesh.NumNeumannEdges:
+                        clr = 'red'
+                        for b in self.Mesh.NeumannEdges:
+                                src_node = self.Mesh.Nodes[b[0]]
+                                tar_node = self.Mesh.Nodes[b[1]]
+                                self.ax.plot([src_node[0], tar_node[0]], [src_node[1], tar_node[1]], 
+					     color = clr, linewidth = 1, marker = 'o', markersize = 5)
+		
+		 # plot the Dirichlet boundaries
+                if self.Mesh.NumDirEdges:
+                        clr = 'blue'
+                        for b in self.Mesh.DirEdges:
+                                src_node = self.Mesh.Nodes[b[0]]
+                                tar_node = self.Mesh.Nodes[b[1]]
+                                self.ax.plot([src_node[0], tar_node[0]], [src_node[1], tar_node[1]], 
+					     color = clr, linewidth = 1, marker = 'o', markersize = 5)
+                                                
+                
 	def plotShapeFunc(self, Node):
 		# plot the mesh at the base
 		for i in range(self.Mesh.NumNodes):
-			for j in range(self.Mesh.NumNodes):
+			for j in range(i+1, self.Mesh.NumNodes):
 				if not self.Mesh.EdgeMatrix[i,j]: continue
 				src_node = self.Mesh.Nodes[i]
 				tar_node = self.Mesh.Nodes[j]
@@ -225,7 +330,7 @@ class Plot:
 
 		# plot the shape function
 		self.ax.plot([Node[0]], [Node[1]], [0.], color = 'blue', marker = 'o', markersize = 10)		
-		support = ShapeFn().getSupport(Mesh = self.Mesh, Node = Node)
+		support = ShapeFn(Mesh = self.Mesh).getSupport(Node = Node)
 		NodeIndex = np.where(self.Mesh.Nodes == Node)[0][0]	
 		for T in support:
 			# color the support
