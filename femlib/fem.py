@@ -252,8 +252,9 @@ class ShapeFn:
         def getNeumannVecEdge_P1(self, g):
                 p0 = self.Mesh.Nodes[self.NeumannEdge[0]]
                 p1 = self.Mesh.Nodes[self.NeumannEdge[1]]
+                p01 = np.array([0.5*(p0[0]+p1[0]), 0.5*(p0[1]+p1[1])])
                 L = np.sqrt(np.sum((p0-p1)**2.))
-                ret = 0.5 * L * g(0.5*(p1+p2)) * np.ones(2)
+                ret = 0.5 * L * g(p01) * np.ones(2)
                 return ret
 
 
@@ -293,49 +294,52 @@ class Assemb:
 
 
 class PDE:
-        def __init__(Mesh = None, StiffMat = None, MassMat = None, g1Neumann = None, g0Dir = None, u = None):
+        def __init__(self, NComponents = 1, Mesh = None, StiffMat = None, MassMat = None, gNeumann = None, gDir = None, u = None):
+                self.NComponents = NComponents
                 self.Mesh = Mesh
                 self.StiffMat = StiffMat
                 self.MassMat = MassMat
-                self.g1Neumann = g1Neumann
-                self.g0Dir = g0Dir
+                self.gNeumann = gNeumann
+                self.gDir = gDir
                 
-                if u is None: self.u = np.zeros([self.Mesh.NumNodes, 1])
+                if u is None: self.u = np.zeros([self.Mesh.NumNodes, self.NComponents])
                 else: self.u = u
-                      
+                self.sol = None
+                                 
                 #Flags
                 self.isDirAssembled = False
                 self.isNeumannAssembled = False
                 self.isSrcAssembled = False
                 self.isLHSMatAssembled = False
                                               
-        
+                
         def getLHS(self):
                 pass
                 # depends on the problem
                 # returns a master matrix on the LHS, that is some
                 # combination of StiffMat and MassMat
         
-        def srcFunc(self, u, node):
+        def srcFunc(self, Node, u):
                 pass
                 # depends on the problem
                 # can be set to a lambda function dependent on 
                 # space or as a lookup table
                
         def getAllSrc(self):
-                ret = np.zeros([self.Mesh.NumNodes, 1]) 
+                ret = np.zeros([self.Mesh.NumNodes, self.NComponents]) 
                 for i, node in enumerate(self.Mesh.Nodes):
-                        ret[i] = self.srcFunc(self.u, node)
+                        f = self.srcFunc(node, self.u)
+                        ret[i,:] = f[:] 
                 return ret        
             
-        def getSourceTerm(self):
-	        ret = np.zeros([self.Mesh.NumNodes,1])
+        def getSrcTerm(self):
+	        ret = np.zeros([self.Mesh.NumNodes,self.NComponents])
 	        f_vals = self.getAllSrc()
                 for T in self.Mesh.Elements:
-                        elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
-                        elemSourceTerm = elemShapeFn.getSourceTermElement_P1(f_vals[T])
-                        for i, nodeI in enumerate(T):
-		                ret[nodeI] += elemSourceTerm[i]
+                        for n in range(self.NComponents):
+                                elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
+                                elemSourceTerm = elemShapeFn.getSourceTermElement_P1(f_vals[T][:,n])
+                                for i, nodeI in enumerate(T): ret[nodeI,n] += elemSourceTerm[i]
 		
 		self.isSrcAssembled = True
 		return ret
@@ -344,12 +348,12 @@ class PDE:
 	        if not self.Mesh.NumNeumannEdges: 
 	                self.isNeumannAssembled = True
 	                return
-	        ret = np.zeros([self.Mesh.NumNodes, 1])
+	        ret = np.zeros([self.Mesh.NumNodes, self.NComponents])
 	        for e in self.Mesh.NeumannEdges:
-	                elemshapeFn = ShapeFn(Mesh = self.Mesh, NeumannEdge = e)
-	                edgeNeumannVec = elemShapeFn.getNeumannVecEdge_P1()
-	                for i, nodeI in enumerate(e):
-	                        ret[nodeI,1] += edgeNeumannVec[i]
+	                for n in range(self.NComponents):
+	                        elemShapeFn = ShapeFn(Mesh = self.Mesh, NeumannEdge = e)
+	                        edgeNeumannVec = elemShapeFn.getNeumannVecEdge_P1(g = self.gNeumann[n])
+	                        for i, nodeI in enumerate(e): ret[nodeI,n] += edgeNeumannVec[i]
                 
                 self.isNeumannAssembled = True
                 return ret
@@ -359,24 +363,33 @@ class PDE:
                         self.isDirAssembled = True
                         return
                 if not isLHSMatAssembled: raise TypeError('First assemble the final form of the master LHS matrix')
-                u_Dir = np.zeros([self.Mesh.NumNodes,1])
+                u_Dir = np.zeros([self.Mesh.NumNodes, self.NComponents])
                 for i, node in enumerate(self.Mesh.DirNodes):
-                        u_Dir[i] = self.g0Dir(node)
+                        for n in range(self.NComponents): u_Dir[i,n] = self.gDir[n](node)
                 
+                u_Dir = u_Dir.flatten(order = 'F')
                 ret  = np.dot(self.LHSMat, u_Dir)
                 self.isDirAssembled = True
                 return ret
                 
-        def AssembPDE(self, A, b, b_Neumann, b_Dir ):
+        def load(self):
                 confirm = [self.isNeumannAssembled, self.isDirAssembled, self.isLHSAssembled, self.isSrcAssembled]
                 if confirm.__contains__(False): raise TypeError('One or more master matrices needs to be assembled first')
-                Ind = self.Mesh.FreeNodes
+ 
+                A = self.getLHSMat()
+                b_Src = self.getSrcTerm()
+                b_Neumann = self.getNeumanBC()
+                b_Dir = self.getDirBC()
                 
+                # flatten all arrays
+                for x in [b_Src, b_Neumann]:
+                        x = x.flatten(order = 'F')
+                
+                Ind = self.Mesh.FreeNodes               
                 LHSMat = A[Ind][:,Ind]
-                RHSVec = b + b_Neumann - b_Dir
+                RHSVec = b_Src + b_Neumann - b_Dir
                 return A, b
-               
-	        
+                       
 
 	        	        
 class Plot:
@@ -445,8 +458,8 @@ class Plot:
 		 		              linewidth = 1, marker = 'o', markersize = 5, color = 'red') 
 
 
-	def patternPlot(self, u_Node, showGrid = False):
-		u_Node = u_Node.flatten()		
+	def patternPlot(self, u_Node, Component = 0, showGrid = False):
+		u_Node = u_Node[:,Component].flatten()		
 		t = mpl_tri.Triangulation(self.Mesh.Nodes[:,0], self.Mesh.Nodes[:,1], self.Mesh.Elements)
 		pattern = self.ax.tripcolor(t, u_Node, shading='interp1', cmap=plt.cm.jet)
 		cbar = plt.colorbar(pattern, ax = self.ax)
@@ -454,9 +467,10 @@ class Plot:
 	        cbar.draw_all()
 		if showGrid: self.plotMesh()
 		
-	def patternAnimate(self, dataFileList):
+		
+	def patternAnimate(self, dataFileList, Component = 0):
 	        t = mpl_tri.Triangulation(self.Mesh.Nodes[:,0], self.Mesh.Nodes[:,1], self.Mesh.Elements)
-	        u0 = np.loadtxt(dataFileList[0]).flatten()
+	        u0 = np.loadtxt(dataFileList[0])[:,Component].flatten()
 	        u0 = u0[:self.Mesh.NumNodes]
 	        
 	        for i, dataFile in enumerate(dataFileList):

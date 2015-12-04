@@ -92,6 +92,8 @@ def testAssembly():
         m.NumDirEdges = len(m.DirEdges)
         
         m.partitionNodes()
+        
+        print '================CHECK MESH NODE SETUP ===================\n\n'
         print "NumDirNodes = ", m.NumDirNodes
 	print "NumFreenodes = ", m.NumFreeNodes
 	print "DirNodes = ", m.DirNodes
@@ -101,14 +103,31 @@ def testAssembly():
 	f_vals = np.array([1.,1.,1.])
 	a.AssembStiffMat()
 	a.AssembMassMat()
-	a.AssembSourceTerm(f_vals)
 	
+	print '\n\n================CHECK MATRICES ASSEMBLED OVER MESH===================\n\n'
 	print "GlobalStiffMat =", a.globalStiffMat
 	print "GlobalMassMat =", a.globalMassMat
-	print "RHSVec with source term only =", a.RHSVec
 	print "StiffMatsize = ", a.globalStiffMat.shape
 	print "MassMatSize = ", a.globalMassMat.shape
-        print "RHSVecSize = ", a.RHSVec.shape
+       
+        gdir = [lambda p: 1]
+        gneumann = [lambda p: 0]
+        pde = PDE(Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat, 
+                  gDir = gdir, gNeumann = gneumann)
+        
+        def srcFunc(p, u): return [10 * p[0] * p[1]]
+        
+        pde.srcFunc = srcFunc          
+        allsrc = pde.getAllSrc()
+        srcterm = pde.getSrcTerm()
+        neumannbc = pde.getNeumannBC()
+        
+        print '================CHECK ASSEMBLED RHS VECTOR===================\n\n'
+        print "AllSrc = ", allsrc
+        print "Src Term = ", srcterm
+        print "NeumannBC = ", neumannbc
+        
+        
         
 def testPoisson():
         K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
