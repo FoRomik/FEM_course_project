@@ -61,13 +61,13 @@ class Mesh:
 				j = np.max(pair)
 				self.EdgeMatrix[i,j] = 1
 
-	def setNeumannBoundary(self):
+	def setNeumannBoundary(self, NeumannEdges = None):
 	        # to be defined by the problem
-	        pass
+	        return NeumannEdges
 	
-	def setDirBoundary(self):
+	def setDirBoundary(self, DirEdges = None):
 	        # to be defined by the problem
-	        pass
+	        return DirEdges
 	
 	def loadBoundaries(self):
 	        self.DirEdges = self.setDirBoundary()
@@ -78,6 +78,23 @@ class Mesh:
 	        del self.BoundaryEdges
 	        del self.NumBoundaryEdges
 	        
+	def partitionNodes(self):
+	        if not self.NumDirEdges:
+	                self.DirNodes = np.array([])
+	                self.FreeNodes = np.array(range(self.NumNodes), np.int32)
+	                return
+	                
+	        DirNodes = set(self.DirEdges.flatten())
+	        FreeNodes = set(self.Elements.flatten()); FreeNodes.difference_update(DirNodes)
+	        self.NumDirNodes = len(DirNodes)
+	        self.NumFreeNodes = len(FreeNodes)
+	        self.FreeNodes = np.array([], np.int32)
+	        self.DirNodes = np.array([], np.int32)
+	        while len(DirNodes) > 0:
+	                self.DirNodes = np.append(self.DirNodes, DirNodes.pop())
+                while len(FreeNodes) > 0:
+                        self.FreeNodes = np.append(self.FreeNodes, FreeNodes.pop())
+	
 	def refineMesh(self):
 		current_Elements = self.Elements
                 current_DirEdges = self.DirEdges
@@ -172,10 +189,11 @@ class Mesh:
 
 
 class ShapeFn:
-	def __init__(self, Mesh = None, Element = None):	
+	def __init__(self, Mesh = None, Element = None, NeumannEdge = None):	
 		self.Element = Element
 		self.Mesh = Mesh
-
+                self.NeumannEdge = NeumannEdge
+                
 	def getElemArea(self):
 		vertices = self.Mesh.Nodes[self.Element]
 		T = np.append(vertices, np.array([[1],[1],[1]]), axis = 1)
@@ -201,7 +219,7 @@ class ShapeFn:
 		N = np.linalg.det(T) / elem_area
 		return N
 
-	def StiffMatElement_P1(self):
+	def getStiffMatElement_P1(self):
 		vertices = self.Mesh.Nodes[self.Element]		
 		g = np.array([ [	1., 		1., 				1., ], 
 			       [vertices[0,0],		vertices[1,0],		vertices[2,0] ],
@@ -218,7 +236,7 @@ class ShapeFn:
 		#ret = np.array(ret)
 		return ret
 
-	def MassMatElement_P1(self):
+	def getMassMatElement_P1(self):
 		x = np.array([ [2,1,1],
 			       [1,2,1],
 			       [1,1,2] ])
@@ -226,26 +244,25 @@ class ShapeFn:
 		ret = 0.5 * elem_area * x / 24.
 		return ret
 
-	def fMatElement_P1(self, f):
-		elem_area = self.getElemArea()
-		f_val = []
-		[f_val.append(f(node)) for node in self.Mesh.Nodes[self.Element]]		
-		ret =  (2*elem_area/18.) * np.sum(np.array(f_val)) * np.ones(3)
+	def getSourceTermElement_P1(self, f_vals):
+		elem_area = self.getElemArea()		
+		ret =  (2*elem_area/18.) * np.sum(np.array(f_vals)) * np.ones(3)
 		return ret
-		
-        def fMatElement_nonlin(self, f, u_Node):
-                # here f is a function of u
-                elem_area = self.getElemArea()
-                f_val = []
-                for i in range(3): f_val.append(f(u_Node[self.Element[i]]))
-                ret =  (2*elem_area/18.) * np.sum(np.array(f_val)) * np.ones(3)
-		return ret
-                
+			       
+        def getNeumannVecEdge_P1(self, g):
+                p0 = self.Mesh.Nodes[self.NeumannEdge[0]]
+                p1 = self.Mesh.Nodes[self.NeumannEdge[1]]
+                L = np.sqrt(np.sum((p0-p1)**2.))
+                ret = 0.5 * L * g(0.5*(p1+p2)) * np.ones(2)
+                return ret
 
 
 class Assemb:
 	def __init__(self, Mesh = None):
 		self.Mesh = Mesh
+		self.globalStiffMat = None
+		self.globalMassMat = None
+		self.RHSVec = None
 	
 	def getAllElementAreas(self):
 	        shapefunc = ShapeFn(Mesh = self.Mesh)
@@ -255,11 +272,11 @@ class Assemb:
 	                areas[i] = shapefunc.getElemArea()
 	        return areas
 	
-	def AssembStiffnessMat(self):
+	def AssembStiffMat(self):
 		self.globalStiffMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])	
 		for T in self.Mesh.Elements:
 			elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
-			elemStiffMat = elemShapeFn.StiffMatElement_P1()
+			elemStiffMat = elemShapeFn.getStiffMatElement_P1()
 			for i, nodeI in enumerate(T):
 				for j, nodeJ in enumerate(T):
 					self.globalStiffMat[nodeI, nodeJ] += elemStiffMat[i, j]
@@ -268,22 +285,100 @@ class Assemb:
 	        self.globalMassMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])	
 	        for T in self.Mesh.Elements:
 			elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
-			elemMassMat = elemShapeFn.MassMatElement_P1()
+			elemMassMat = elemShapeFn.getMassMatElement_P1()
 			for i, nodeI in enumerate(T):
 				for j, nodeJ in enumerate(T):
 					self.globalMassMat[nodeI, nodeJ] += elemMassMat[i, j]
-	        	        
-	def AssembRHSVec(self, f):
-		self.globalfMat = np.zeros([self.Mesh.NumNodes,1])
+	
+
+
+class PDE:
+        def __init__(Mesh = None, StiffMat = None, MassMat = None, g1Neumann = None, g0Dir = None, u = None):
+                self.Mesh = Mesh
+                self.StiffMat = StiffMat
+                self.MassMat = MassMat
+                self.g1Neumann = g1Neumann
+                self.g0Dir = g0Dir
+                
+                if u is None: self.u = np.zeros([self.Mesh.NumNodes, 1])
+                else: self.u = u
+                      
+                #Flags
+                self.isDirAssembled = False
+                self.isNeumannAssembled = False
+                self.isSrcAssembled = False
+                self.isLHSMatAssembled = False
+                                              
+        
+        def getLHS(self):
+                pass
+                # depends on the problem
+                # returns a master matrix on the LHS, that is some
+                # combination of StiffMat and MassMat
+        
+        def srcFunc(self, u, node):
+                pass
+                # depends on the problem
+                # can be set to a lambda function dependent on 
+                # space or as a lookup table
+               
+        def getAllSrc(self):
+                ret = np.zeros([self.Mesh.NumNodes, 1]) 
+                for i, node in enumerate(self.Mesh.Nodes):
+                        ret[i] = self.srcFunc(self.u, node)
+                return ret        
+            
+        def getSourceTerm(self):
+	        ret = np.zeros([self.Mesh.NumNodes,1])
+	        f_vals = self.getAllSrc()
                 for T in self.Mesh.Elements:
                         elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
-                        elemfMat = elemShapeFn.fMatElement_P1(f = f)
+                        elemSourceTerm = elemShapeFn.getSourceTermElement_P1(f_vals[T])
                         for i, nodeI in enumerate(T):
-		                self.globalfMat[nodeI] += elemfMat[i]
+		                ret[nodeI] += elemSourceTerm[i]
+		
+		self.isSrcAssembled = True
+		return ret
 
+        def getNeumannBC(self):
+	        if not self.Mesh.NumNeumannEdges: 
+	                self.isNeumannAssembled = True
+	                return
+	        ret = np.zeros([self.Mesh.NumNodes, 1])
+	        for e in self.Mesh.NeumannEdges:
+	                elemshapeFn = ShapeFn(Mesh = self.Mesh, NeumannEdge = e)
+	                edgeNeumannVec = elemShapeFn.getNeumannVecEdge_P1()
+	                for i, nodeI in enumerate(e):
+	                        ret[nodeI,1] += edgeNeumannVec[i]
+                
+                self.isNeumannAssembled = True
+                return ret
+      
+        def getDirBC(self):
+                if not self.Mesh.NumDirEdges: 
+                        self.isDirAssembled = True
+                        return
+                if not isLHSMatAssembled: raise TypeError('First assemble the final form of the master LHS matrix')
+                u_Dir = np.zeros([self.Mesh.NumNodes,1])
+                for i, node in enumerate(self.Mesh.DirNodes):
+                        u_Dir[i] = self.g0Dir(node)
+                
+                ret  = np.dot(self.LHSMat, u_Dir)
+                self.isDirAssembled = True
+                return ret
+                
+        def AssembPDE(self, A, b, b_Neumann, b_Dir ):
+                confirm = [self.isNeumannAssembled, self.isDirAssembled, self.isLHSAssembled, self.isSrcAssembled]
+                if confirm.__contains__(False): raise TypeError('One or more master matrices needs to be assembled first')
+                Ind = self.Mesh.FreeNodes
+                
+                LHSMat = A[Ind][:,Ind]
+                RHSVec = b + b_Neumann - b_Dir
+                return A, b
+               
+	        
 
-
-
+	        	        
 class Plot:
 	def __init__(self, Mesh, ax = None):
 		self.Mesh = Mesh		

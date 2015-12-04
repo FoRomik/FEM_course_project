@@ -25,11 +25,18 @@ def testMesh():
         m.DirEdges = np.array([[0,8], [0,15]])
         m.NumDirEdges = len(m.DirEdges)
         
+	m.partitionNodes()
+	print m.DirNodes
+	print m.FreeNodes
+	
 	ax1 = plt.subplot(121); ax2 = plt.subplot(122)
 	p = Plot(Mesh = m)
 	p.ax = ax1; p.plotBoundaries()
 	
 	m.refineMesh()
+	m.partitionNodes()
+	print m.DirNodes
+	print m.FreeNodes
 	p.ax = ax2; p.plotBoundaries()
 
 
@@ -57,7 +64,7 @@ def testPatternPlot():
 
 def testElementMat():
 	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
-        m = Mesh(K0)
+        m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	T = m.Elements[22]	
 	s = ShapeFn(Mesh = m, Element = T)
 	stiffmat = s.StiffMatElement_P1()
@@ -72,17 +79,36 @@ def testElementMat():
 	print 'massmat = ', massmat
 
 
-def testNaiveAssembly():
+def testAssembly():
 	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
         m = Mesh(K0)
-	f = lambda node : node[0] + node[1]
+	
+	m.NeumannEdges = m.BoundaryEdges 
+        m.NeumannEdges = np.delete(m.NeumannEdges, 0, 0)
+        m.NeumannEdges = np.delete(m.NeumannEdges, 14, 0)
+        m.NumNeumannEdges = len(m.NeumannEdges)
+       
+        m.DirEdges = np.array([[0,8], [0,15]])
+        m.NumDirEdges = len(m.DirEdges)
+        
+        m.partitionNodes()
+        print "NumDirNodes = ", m.NumDirNodes
+	print "NumFreenodes = ", m.NumFreeNodes
+	print "DirNodes = ", m.DirNodes
+	print "FreeNodes = ", m.FreeNodes
+	
 	a = Assemb(Mesh = m)
-	a.AssembMat_naive()
-	a.AssembRHSVec(f =f)
-	print a.globalStiffMat
-	print a.globalMassMat
-	print a.globalfMat
-
+	f_vals = np.array([1.,1.,1.])
+	a.AssembStiffMat()
+	a.AssembMassMat()
+	a.AssembSourceTerm(f_vals)
+	
+	print "GlobalStiffMat =", a.globalStiffMat
+	print "GlobalMassMat =", a.globalMassMat
+	print "RHSVec with source term only =", a.RHSVec
+	print "StiffMatsize = ", a.globalStiffMat.shape
+	print "MassMatSize = ", a.globalMassMat.shape
+        print "RHSVecSize = ", a.RHSVec.shape
         
 def testPoisson():
         K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
@@ -158,7 +184,7 @@ if __name__ == '__main__':
 	#testShapeFnPlot()
 	#testPatternPlot()
 	#testShapeFnPlot()		
-	#testNaiveAssembly()
+	testAssembly()
 	#testPoisson()
 	#testErrorScaling(showPlots = False)
 	#testbkEuler()
