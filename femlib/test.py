@@ -93,14 +93,13 @@ def testAssembly():
         
         m.partitionNodes()
         
-        print '================CHECK MESH NODE SETUP ===================\n\n'
+        print '\n\n================CHECK MESH NODE SETUP ===================\n\n'
         print "NumDirNodes = ", m.NumDirNodes
 	print "NumFreenodes = ", m.NumFreeNodes
 	print "DirNodes = ", m.DirNodes
 	print "FreeNodes = ", m.FreeNodes
 	
 	a = Assemb(Mesh = m)
-	f_vals = np.array([1.,1.,1.])
 	a.AssembStiffMat()
 	a.AssembMassMat()
 	
@@ -116,86 +115,97 @@ def testAssembly():
                   gDir = gdir, gNeumann = gneumann)
         
         def srcFunc(p, u): return [10 * p[0] * p[1]]
-        
         pde.srcFunc = srcFunc          
         allsrc = pde.getAllSrc()
         srcterm = pde.getSrcTerm()
         neumannbc = pde.getNeumannBC()
         
-        print '================CHECK ASSEMBLED RHS VECTOR===================\n\n'
+        print '\n\n================CHECK ASSEMBLED RHS VECTOR===================\n\n'
         print "AllSrc = ", allsrc
         print "Src Term = ", srcterm
         print "NeumannBC = ", neumannbc
+        print "SrcTermSize = ", srcterm.shape
+        print "NeumannBCSize = ", neumannbc.shape
+        
+        def getLHS(K,M): return K+M
+               
+        pde.getLHS = getLHS
+        dirbc = pde.getDirBC()
+        A,b = pde.load()
+        
+        print '\n\n================CHECK ASSEMBLED LHS MATRIX===================\n\n'
+        print "DirBC = ", dirbc
+        print "A = ", A
+        print "b =", b
+        print "DirBCSize = ", dirbc.shape
+        print "ASize = ", A.shape
+        print "bsize =", b.shape
         
         
         
 def testPoisson():
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+        # init mesh
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0)
-	f = lambda node: 1.0
-	a = Assemb(Mesh = m)
-	a.AssembMat_naive()
-	a.AssembRHSVec(f = f)
-	K = a.globalStiffMat
-	F = a.globalfMat
-	u = np.linalg.solve(K,F)
+        
+        # set boundary conditions
+        m.DirEdges = m.BoundaryEdges
+        m.NumDirEdges = len(m.DirEdges)
+        g = [lambda p: 0.]
+        
+        # get boundary partition
+        m.partitionNodes()
+        
+        # assemble stiffness and mass matrices
+        a = Assemb(Mesh = m)
+	a.AssembStiffMat()
+	a.AssembMassMat()
+        K = a.globalStiffMat
+        M = a.globalMassMat
+        
+        # set source function
+        def fsrc(p,u): return [-4.]
+        
+        # assemble LHS of final lin. alg problem
+        def getLHS(K,M): return -K
+         
+        # define the PDE
+        pde = PDE(Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat, gDir = g)
+        pde.srcFunc = fsrc
+        pde.getLHS = getLHS
+        
+        # generate final lin alg problem
+        print 'Assembling Lin. Alg. problem...'
+        A,b = pde.load()
+        
+        # solve the lin alg problem naively
+        x = np.linalg.solve(A,b)
+        
+        # construct the full solution 
+        u = pde.makeSol(x)
 
-	ax = plt.subplot(111)
-	p = Plot(Mesh = m, ax = ax)
-	p.patternPlot(u_Node = u, showGrid = False)
+        # analytical exact solution
+        u_ex = np.zeros([m.NumNodes,1])
+        for i in range(m.NumNodes):
+                p = m.Nodes[i]
+                u_ex[i,0] = 1 - p[0]**2. - p[1]**2.
+        
+        # plot the solution and compare with analytical sol
+	ax1 = plt.subplot(121); ax1.set_title('Exact')
+	ax2 = plt.subplot(122); ax2.set_title('Finite Element')
+	p = Plot(Mesh = m)
+	p.ax = ax1; p.patternPlot(u_ex)
+	p.ax = ax2; p.patternPlot(u)
+	
+	L2error = np.linalg.norm(u.flatten(order = 'F') -u_ex.flatten(order = 'F'), ord = 2)
+	L1error = np.linalg.norm(u.flatten(order = 'F') -u_ex.flatten(order = 'F'), ord = np.inf)
+	print "L2 Norm of Error = ", L2error
+	print "L1 Norm of Error = ", L1error
+	return (L2error, L1error)
 	
 
 def testErrorScaling(showPlots = False):
-	matfile_fmt = os.path.join(testdata_dir, 'testmesh%d.mat')
-	outfile_fmt = os.path.join(testdata_dir, 'testfem%d.mat')
-	diams = np.array([0.1, 0.08, 0.04, 0.06, 0.02])
-	err = np.zeros(len(diams))	
-		
-	 # test for the function u(x,y) = arctan(y/x) 
-        # which has du/dr = 0 at the boundaries
-        			
-	f_exact = lambda p : p[0]**2.+p[1]**2. - 2*np.sqrt(p[0]**2.+p[1]**2.)		
-	f = lambda p : 4 - 2./np.sqrt(p[0]**2.+p[1]**2.)
-
-	for i, h in enumerate(diams):
-		matfile = matfile_fmt % i
-		
-		# fem solution	
-		K = importInitMesh(matfile)
-		mesh = Mesh(K);
-		a = Assemb(Mesh = mesh)
-		a.AssembRHSVec(f=f)
-		a.AssembMat_naive()
-		K = a.globalStiffMat
-		F = a.globalfMat
-		u = np.linalg.solve(K,F)
-                np.savetxt(outfile_fmt % i, u)
-                
-                print mesh.NumNodes, mesh.Elements.shape, u.shape
-
-		# exact solution		
-		u_exact = np.zeros(mesh.NumNodes)
-		for j in range(mesh.NumNodes):
-			u_exact[j] = f_exact(mesh.Nodes[i])
-		
-		if showPlots:
-	        	ax1 = plt.subplot(121) ; ax2 = plt.subplot(122)
-		        p = Plot(Mesh = mesh)
-        		p.ax = ax1; p.patternPlot(u_exact); ax1.set_title('Exact')
-        		p.ax = ax2; p.patternPlot(u); ax2.set_title('FEM')
-        		plt.show()
-	
-		# error
-		err[i] = np.linalg.norm(u_exact - u)
-	        print '\nFEM: Mesh_diameter = %g, Error = %g\n' % (h, err[i])
-	
-	plt.scatter(1./diams, err, marker = 'o', color = 'red', label = r'$L^2$' + ' norm of error')
-	plt.xscale('log'); plt.yscale('log')
-	plt.xlabel(r'$1/h$', fontsize = 'large'); plt.ylabel(r'$|u-u_{exact}|$', fontsize = 'large')
-	out = stats.linregress(np.log10(diams), np.log10(err))
-	slope = out[0]
-	
-	print 'Slope = ', slope
+	pass
 
 
 if __name__ == '__main__':
@@ -203,8 +213,8 @@ if __name__ == '__main__':
 	#testShapeFnPlot()
 	#testPatternPlot()
 	#testShapeFnPlot()		
-	testAssembly()
-	#testPoisson()
+	#testAssembly()
+	testPoisson()
 	#testErrorScaling(showPlots = False)
-	#testbkEuler()
+
 plt.show()

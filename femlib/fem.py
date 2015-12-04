@@ -310,10 +310,9 @@ class PDE:
                 self.isDirAssembled = False
                 self.isNeumannAssembled = False
                 self.isSrcAssembled = False
-                self.isLHSMatAssembled = False
                                               
                 
-        def getLHS(self):
+        def getLHS(self, StiffMat, MassMat):
                 pass
                 # depends on the problem
                 # returns a master matrix on the LHS, that is some
@@ -347,7 +346,7 @@ class PDE:
         def getNeumannBC(self):
 	        if not self.Mesh.NumNeumannEdges: 
 	                self.isNeumannAssembled = True
-	                return
+	                return np.zeros([self.Mesh.NumNodes, self.NComponents])
 	        ret = np.zeros([self.Mesh.NumNodes, self.NComponents])
 	        for e in self.Mesh.NeumannEdges:
 	                for n in range(self.NComponents):
@@ -361,35 +360,46 @@ class PDE:
         def getDirBC(self):
                 if not self.Mesh.NumDirEdges: 
                         self.isDirAssembled = True
-                        return
-                if not isLHSMatAssembled: raise TypeError('First assemble the final form of the master LHS matrix')
+                        return np.zeros([self.Mesh.NumNodes*self.NComponents,1])
                 u_Dir = np.zeros([self.Mesh.NumNodes, self.NComponents])
                 for i, node in enumerate(self.Mesh.DirNodes):
                         for n in range(self.NComponents): u_Dir[i,n] = self.gDir[n](node)
                 
                 u_Dir = u_Dir.flatten(order = 'F')
-                ret  = np.dot(self.LHSMat, u_Dir)
+                u_Dir = u_Dir.reshape((len(u_Dir),1))
+                LHSMat = self.getLHS(self.StiffMat, self.MassMat)
+                ret  = np.dot(LHSMat, u_Dir)
                 self.isDirAssembled = True
                 return ret
                 
         def load(self):
-                confirm = [self.isNeumannAssembled, self.isDirAssembled, self.isLHSAssembled, self.isSrcAssembled]
-                if confirm.__contains__(False): raise TypeError('One or more master matrices needs to be assembled first')
- 
-                A = self.getLHSMat()
+                A = self.getLHS(self.StiffMat, self.MassMat)
                 b_Src = self.getSrcTerm()
-                b_Neumann = self.getNeumanBC()
+                b_Neumann = self.getNeumannBC()
                 b_Dir = self.getDirBC()
                 
                 # flatten all arrays
                 for x in [b_Src, b_Neumann]:
                         x = x.flatten(order = 'F')
+                        x = x.reshape((len(x),1))
                 
+                # separate into RHS and LHS
                 Ind = self.Mesh.FreeNodes               
                 LHSMat = A[Ind][:,Ind]
-                RHSVec = b_Src + b_Neumann - b_Dir
-                return A, b
-                       
+                RHSVec = (b_Src + b_Neumann - b_Dir)[Ind]
+                
+                return LHSMat, RHSVec
+         
+         
+        def makeSol(self, x):
+                x = x.reshape(self.Mesh.NumFreeNodes, self.NComponents, order = 'F')
+                sol = np.zeros([self.Mesh.NumNodes, self.NComponents])
+                sol[self.Mesh.FreeNodes, :] = x
+                for i, node in enumerate(self.Mesh.DirNodes):
+                        for n in range(self.NComponents): 
+                                sol[i,n] = self.gDir[n](node)
+                
+                return sol
 
 	        	        
 class Plot:
