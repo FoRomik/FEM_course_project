@@ -151,7 +151,8 @@ def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
         # set boundary conditions
         m.DirEdges = m.BoundaryEdges
         m.NumDirEdges = len(m.DirEdges)
-        g = [lambda p: 0.]
+        g = [lambda p: (1 -p[0] - p[1]),  
+             lambda p: (1.-p[0]**3.-p[1]**3.)/6.]
         
         # get boundary partition
         m.partitionNodes()
@@ -164,13 +165,17 @@ def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
         M = a.globalMassMat
         
         # set source function
-        def fsrc(p,u): return [4.]
+        def fsrc(p,u): return [0., 
+                               p[0]+p[1] ]
         
         # assemble LHS of final lin. alg problem
-        def getLHS(K,M): return -K
+        def getLHS(K,M):
+                zero = np.zeros([K.shape[0], K.shape[1]])
+                lhs = np.bmat([[K, zero], [zero, K]])
+                return np.array(lhs)
          
         # define the PDE
-        pde = PDE(Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat, gDir = g)
+        pde = PDE(NComponents = 2, Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat, gDir = g)
         pde.srcFunc = fsrc
         pde.getLHS = getLHS
         
@@ -185,25 +190,45 @@ def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
         u = pde.makeSol(x)
 
         # analytical exact solution
-        u_ex = np.zeros([m.NumNodes,1])
+        u_ex = np.zeros([m.NumNodes,pde.NComponents])
         for i in range(m.NumNodes):
                 p = m.Nodes[i]
-                u_ex[i,0] = 1 - p[0]**2. - p[1]**2.
-                u_ex[i,0] *= -1.
+                u_ex[i,0] = 1- p[0] - p[1]
+                u_ex[i,1] = (1./6.)*(1 - p[0]**3. - p[1]**3.)
         
         # plot the solution and compare with analytical sol
         if showPlot:
-	        fig = plt.figure(figsize = (12,4), facecolor = 'w', edgecolor = 'w')
-        	ax1 = fig.add_subplot(121); ax1.set_title('Exact')
-        	ax2 = fig.add_subplot(122); ax2.set_title('Finite Element')
-        	p = Plot(Mesh = m)
-        	p.ax = ax1; p.patternPlot(u_ex)
-        	p.ax = ax2; p.patternPlot(u)
+                p = Plot(Mesh = m)
+	        fig = plt.figure(figsize = (12,8), facecolor = 'w', edgecolor = 'w')
+        	nrows = pde.NComponents ; ncols = 3
+        	for n in range(pde.NComponents):
+        	        ind_ex =  3*n+1
+        	        ind_fem = 3*n+2
+        	        ind_err = 3*n+3
+        	        ax1 = fig.add_subplot(nrows, ncols, ind_ex)
+        	        ax2 = fig.add_subplot(nrows, ncols, ind_fem)
+        	        ax3 = fig.add_subplot(nrows, ncols, ind_err)
+        	        if n == 0:
+        	                ax1.set_title(r'$u_{exact}$', fontsize = 'xx-large', fontweight = 'bold')
+        	                ax2.set_title(r'$u_{FEM}$', fontsize = 'xx-large', fontweight = 'bold')
+        	                ax3.set_title(r'$u_{exact} - u_{FEM}$', fontsize = 'xx-large', fontweight = 'bold')
+        	        else:
+        	                ax1.set_title('')
+        	                ax2.set_title('')
+        	                ax3.set_title('')
+        	
+        	        p.ax = ax1; p.patternPlot(u_ex, n)
+        	        p.ax = ax2; p.patternPlot(u, n)
+        	        p.ax = ax3; p.patternPlot(u_ex - u, n)
 	
-	L2error = np.linalg.norm(u.flatten(order = 'F') -u_ex.flatten(order = 'F'), ord = 2)
-	L1error = np.linalg.norm(u.flatten(order = 'F') -u_ex.flatten(order = 'F'), ord = np.inf)
-
-	return (L2error, L1error)
+	                
+	# calculate error norms
+	L2err = np.zeros(pde.NComponents); L1err = np.zeros(pde.NComponents)
+	for n in range(pde.NComponents):
+	        L2err[n] =np.linalg.norm(u[:,n].flatten(order = 'F') -u_ex[:,n].flatten(order = 'F'), ord = 2)
+	        L1err[n] = np.linalg.norm(u[:,n].flatten(order = 'F') -u_ex[:,n].flatten(order = 'F'), ord = np.inf)
+	               
+	return (L2err, L1err)
 	
 
 def testErrorScaling():
@@ -216,7 +241,7 @@ def testErrorScaling():
 	        print 'Solving system for mesh size = ', h
 	        meshmatfile = meshmatfile_fmt % i
 	        (L2_err, L1_err) = testPoisson(meshmatfile, showPlot = False)
-	        err[i,0] = L2_err; err[i,1] = L1_err
+	        err[i,0] = L2_err[0]; err[i,1] = L1_err[0]
 	
 	logh = np.log10(1./hmax)
 	logL2err = np.log10(err[:,0]); logL1err = np.log10(err[:,1])
@@ -251,7 +276,7 @@ if __name__ == '__main__':
 	#testPatternPlot()
 	#testShapeFnPlot()		
 	#testAssembly()
-	testPoisson()
-	#testErrorScaling()
+	#testPoisson()
+	testErrorScaling()
 
 plt.show()

@@ -196,7 +196,7 @@ class ShapeFn:
                 
 	def getElemArea(self):
 		vertices = self.Mesh.Nodes[self.Element]
-		T = np.append(vertices, np.array([[1],[1],[1]]), axis = 1)
+		T = np.append(np.array([[1],[1],[1]]), vertices, axis = 1)
 		area = np.linalg.det(T)
 		return area
 	
@@ -241,20 +241,19 @@ class ShapeFn:
 			       [1,2,1],
 			       [1,1,2] ])
 		elem_area = self.getElemArea()
-		ret = 0.5 * elem_area * x / 24.
+		ret = 2. * elem_area * x / 24.
 		return ret
 
 	def getSourceTermElement_P1(self, f_vals):
-		elem_area = self.getElemArea()		
-		ret =  (2*elem_area/18.) * np.sum(np.array(f_vals)) * np.ones(3)
+		elem_area = self.getElemArea()	
+		ret =  (2.*elem_area/18.) * np.sum(np.array(f_vals)) * np.ones(3)
 		return ret
 			       
         def getNeumannVecEdge_P1(self, g):
                 p0 = self.Mesh.Nodes[self.NeumannEdge[0]]
                 p1 = self.Mesh.Nodes[self.NeumannEdge[1]]
-                p01 = np.array([0.5*(p0[0]+p1[0]), 0.5*(p0[1]+p1[1])])
                 L = np.sqrt(np.sum((p0-p1)**2.))
-                ret = 0.5 * L * g(p01) * np.ones(2)
+                ret = 0.5 * L * (g(p0)+g(p1)) * np.ones(2)
                 return ret
 
 
@@ -360,44 +359,60 @@ class PDE:
         def getDirBC(self):
                 if not self.Mesh.NumDirEdges: 
                         self.isDirAssembled = True
-                        return np.zeros([self.Mesh.NumNodes*self.NComponents,1])
-                u_Dir = np.zeros([self.Mesh.NumNodes, self.NComponents])
+                        return np.zeros([self.Mesh.NumDirNodes,self.NComponents])
+                u_Dir = np.zeros([self.Mesh.NumDirNodes, self.NComponents])
                 for i, node in enumerate(self.Mesh.DirNodes):
-                        for n in range(self.NComponents): u_Dir[i,n] = self.gDir[n](node)
+                        for n in range(self.NComponents): 
+                                p = self.Mesh.Nodes[node]
+                                u_Dir[i,n] = self.gDir[n](p)
+                 
+                return u_Dir
                 
-                u_Dir = u_Dir.flatten(order = 'F')
-                u_Dir = u_Dir.reshape((len(u_Dir),1))
-                LHSMat = self.getLHS(self.StiffMat, self.MassMat)
-                ret  = np.dot(LHSMat, u_Dir)
-                self.isDirAssembled = True
-                return ret
-                
+        def getDirNodeArray(self, x):
+                Ind = self.Mesh.FreeNodes
+                Dir = self.Mesh.DirNodes
+                if x.shape[1] > self.NComponents: x = x[Ind][:,Dir]
+                return x
+        
+        def getFreeNodeArray(self, x):
+                Ind = self.Mesh.FreeNodes
+                if x.shape[1] > self.NComponents: x = x[Ind][:,Ind]
+                else: x = x[Ind]                
+                return x
+        
         def load(self):
-                A = self.getLHS(self.StiffMat, self.MassMat)
-                b_Src = self.getSrcTerm()
-                b_Neumann = self.getNeumannBC()
-                b_Dir = self.getDirBC()
+                # assemble final LHS
+                K_Free = self.getFreeNodeArray(self.StiffMat)
+                M_Free = self.getFreeNodeArray(self.MassMat)
+                LHSMat = self.getLHS(K_Free,M_Free)
+               
+                # assemble final RHS
+                b_Src = self.getFreeNodeArray(self.getSrcTerm())
+                b_Neumann = self.getFreeNodeArray(self.getNeumannBC())
+                b_Free = (b_Src + b_Neumann).flatten(order = 'F')
+                b_Free = b_Free.reshape(len(b_Free), 1)
                 
-                # flatten all arrays
-                for x in [b_Src, b_Neumann]:
-                        x = x.flatten(order = 'F')
-                        x = x.reshape((len(x),1))
+                K_Dir = self.getDirNodeArray(self.StiffMat)
+                M_Dir = self.getDirNodeArray(self.MassMat)
+                A_Dir = self.getLHS(K_Dir, M_Dir)
+                u_Dir = self.getDirBC().flatten(order = 'F')
+                u_Dir = u_Dir.reshape(len(u_Dir), 1)
+                b_Dir = np.dot(A_Dir, u_Dir)
                 
-                # separate into RHS and LHS
-                Ind = self.Mesh.FreeNodes               
-                LHSMat = A[Ind][:,Ind]
-                RHSVec = (b_Src + b_Neumann - b_Dir)[Ind]
-                
+                RHSVec = b_Free - b_Dir
+                  
                 return LHSMat, RHSVec
          
          
         def makeSol(self, x):
                 x = x.reshape(self.Mesh.NumFreeNodes, self.NComponents, order = 'F')
                 sol = np.zeros([self.Mesh.NumNodes, self.NComponents])
-                sol[self.Mesh.FreeNodes, :] = x
-                for i, node in enumerate(self.Mesh.DirNodes):
-                        for n in range(self.NComponents): 
-                                sol[i,n] = self.gDir[n](node)
+                for n in range(self.NComponents):
+                        for i, node in enumerate(self.Mesh.FreeNodes):
+                                sol[node, n] = x[i,n]
+                        for node in self.Mesh.DirNodes:
+                                p = self.Mesh.Nodes[node]
+                                sol[node,n] = self.gDir[n](p)
                 
                 return sol
 
