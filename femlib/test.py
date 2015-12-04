@@ -143,9 +143,9 @@ def testAssembly():
         
         
         
-def testPoisson():
+def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
         # init mesh
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, meshmatfile))
         m = Mesh(K0)
         
         # set boundary conditions
@@ -164,7 +164,7 @@ def testPoisson():
         M = a.globalMassMat
         
         # set source function
-        def fsrc(p,u): return [-4.]
+        def fsrc(p,u): return [4.]
         
         # assemble LHS of final lin. alg problem
         def getLHS(K,M): return -K
@@ -189,24 +189,61 @@ def testPoisson():
         for i in range(m.NumNodes):
                 p = m.Nodes[i]
                 u_ex[i,0] = 1 - p[0]**2. - p[1]**2.
+                u_ex[i,0] *= -1.
         
         # plot the solution and compare with analytical sol
-	ax1 = plt.subplot(121); ax1.set_title('Exact')
-	ax2 = plt.subplot(122); ax2.set_title('Finite Element')
-	p = Plot(Mesh = m)
-	p.ax = ax1; p.patternPlot(u_ex)
-	p.ax = ax2; p.patternPlot(u)
+        if showPlot:
+	        fig = plt.figure(figsize = (12,4), facecolor = 'w', edgecolor = 'w')
+        	ax1 = fig.add_subplot(121); ax1.set_title('Exact')
+        	ax2 = fig.add_subplot(122); ax2.set_title('Finite Element')
+        	p = Plot(Mesh = m)
+        	p.ax = ax1; p.patternPlot(u_ex)
+        	p.ax = ax2; p.patternPlot(u)
 	
 	L2error = np.linalg.norm(u.flatten(order = 'F') -u_ex.flatten(order = 'F'), ord = 2)
 	L1error = np.linalg.norm(u.flatten(order = 'F') -u_ex.flatten(order = 'F'), ord = np.inf)
-	print "L2 Norm of Error = ", L2error
-	print "L1 Norm of Error = ", L1error
+
 	return (L2error, L1error)
 	
 
-def testErrorScaling(showPlots = False):
-	pass
-
+def testErrorScaling():
+	meshmatfile_fmt = 'testmesh%d.mat'
+	hmax = np.linspace(0.1,0.25,21)
+	N = len(hmax)
+	err = np.zeros([N,2])
+	for i in range(N):
+	        h = hmax[i]
+	        print 'Solving system for mesh size = ', h
+	        meshmatfile = meshmatfile_fmt % i
+	        (L2_err, L1_err) = testPoisson(meshmatfile, showPlot = False)
+	        err[i,0] = L2_err; err[i,1] = L1_err
+	
+	logh = np.log10(1./hmax)
+	logL2err = np.log10(err[:,0]); logL1err = np.log10(err[:,1])
+	statoutL2 = stats.linregress(logh, logL2err); statoutL1 = stats.linregress(logh, logL1err)
+	slopeL2 = statoutL2[0]; interceptL2 = statoutL2[1]
+	slopeL1 = statoutL1[0]; interceptL1 = statoutL1[1]
+	logL2err_fit = slopeL2*logh + interceptL2
+	logL1err_fit = slopeL1*logh + interceptL1
+	
+	fig = plt.figure(figsize = (8,4), facecolor = 'w', edgecolor = 'w')
+	ax1 = fig.add_subplot(121)
+	ax1.scatter(logh, logL2err, marker = 'o', color = 'red')
+	ax1.plot(logh, logL2err_fit, color = 'black')
+	
+	ax2 = fig.add_subplot(122)
+	ax2.scatter(logh, logL1err, marker = 'o', color = 'red')
+	ax2.plot(logh, logL1err_fit, color = 'black')
+	
+	ax1.set_xlabel(r'$log(\frac{1}{h})$', fontsize = 'large')
+	ax1.set_ylabel(r'$log(\epsilon_{L_2})$', fontsize = 'large')
+	ax2.set_xlabel(r'$log(h)$', fontsize = 'large')
+	ax2.set_ylabel(r'$log(\epsilon_{L_1})$', fontsize = 'large')
+	
+	plt.subplots_adjust(wspace = 0.5, bottom = 0.2, left = 0.12)
+	
+	print "L2 error order = ", slopeL2
+	print "L1 error order = ", slopeL1
 
 if __name__ == '__main__':
 	#testMesh()
@@ -215,6 +252,6 @@ if __name__ == '__main__':
 	#testShapeFnPlot()		
 	#testAssembly()
 	testPoisson()
-	#testErrorScaling(showPlots = False)
+	#testErrorScaling()
 
 plt.show()
