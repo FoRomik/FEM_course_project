@@ -113,7 +113,7 @@ def testAssembly():
         pde = Elliptic(Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat)
         
         # set source term and boundary conditions
-        def fsrc(Mesh = m, u = None): return [lambda p: 10 * p[0] * p[1]]
+        def fsrc(Mesh = m): return [lambda p: 10 * p[0] * p[1]]
         def gdir(Mesh = m): return [lambda p: 1]
         def gneumann(Mesh = m): return [lambda p: 0]
         pde.setSrcFunc = fsrc     
@@ -139,7 +139,7 @@ def testAssembly():
         print '\n\n================CHECK ASSEMBLED LHS MATRIX===================\n\n'
         print "DirBC = ", dirbc
         print "A = ", A
-        print "b =", b
+        print "b =", b[0]+b[1]-b[2]
         print "DirBCSize = ", dirbc.shape
         print "ASize = ", A.shape
         print "bsize =", b.shape
@@ -213,7 +213,8 @@ def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
         
         # generate final lin alg problem
         print 'Assembling Lin. Alg. problem...'
-        A,b = pde.AssemPDE()
+        A,rhs = pde.AssemPDE()
+        b = rhs[0] + rhs[1] - rhs[2]
         
         # solve the lin alg problem naively
         x = np.linalg.solve(A,b)

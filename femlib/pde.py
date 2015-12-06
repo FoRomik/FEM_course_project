@@ -135,13 +135,11 @@ class Elliptic(PDE):
                 M_Free = self.getFreeNodeArray(self.MassMat)
                 LHSMat = self.AssembLHS(K_Free,M_Free)
                
-                # assemble Neumann and source terms on RHS
-                b_Src = self.getFreeNodeArray(self.getSrcTerm())
-                b_Neumann = self.getFreeNodeArray(self.getNeumannBC())
-                b_Free = (b_Src + b_Neumann).flatten(order = 'F')
-                b_Free = b_Free.reshape(len(b_Free), 1)
+                # assemble Neumann terms
+                b_Neumann = self.getFreeNodeArray(self.getNeumannBC()).flatten(order = 'F')
+                b_Neumann = b_Neumann.reshape(len(b_Neumann),1)
                 
-                # assemble Dirichlet terms on RHS
+                # assemble Dirichlet terms
                 K_Dir = self.getDirNodeArray(self.StiffMat)
                 M_Dir = self.getDirNodeArray(self.MassMat)
                 A_Dir = self.AssembLHS(K_Dir, M_Dir)
@@ -149,8 +147,14 @@ class Elliptic(PDE):
                 u_Dir = u_Dir.reshape(len(u_Dir), 1)
                 b_Dir = np.dot(A_Dir, u_Dir)
                 
-                # assemble RHS
-                RHSVec = b_Free - b_Dir
+                # assemble source terms (may be nonlinear)
+                b_Src = self.getFreeNodeArray(self.getSrcTerm()).flatten(order = 'F')
+                b_Src = b_Src.reshape(len(b_Src), 1)  
+                
+                # assemble RHSVec (simply return the three vectors 
+                # and let the calling script do the assembly. This ensures
+                # generality for nonlinear cases)
+                RHSVec = (b_Src, b_Neumann, b_Dir)  
                   
                 return LHSMat, RHSVec
          
