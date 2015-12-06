@@ -1,14 +1,55 @@
 #!/usr/bin/env python
 
+import os
 import numpy as np
 import fem
 
+LAPACK_PATH = '/usr/lib/lapack'
+fort_recompile = False
+linsolv_src = '''
+SUBROUTINE MUL(A, B, C, rowsA, colsA, rowsB, colsB)
+        IMPLICIT NONE
+        INTEGER, INTENT(IN) :: rowsA, rowsB, colsA, colsB            
+        REAL(8), INTENT(IN), DIMENSION(0:rowsA-1, 0:colsA-1) :: A
+        REAL(8), INTENT(IN), DIMENSION(0:rowsB, 0:colsB) :: B
+        REAL(8), INTENT(OUT), DIMENSION(0:rowsA-1, 0:colsB) :: C
+        
+        C = MATMUL(A,B)
+        
+END SUBROUTINE
+        
+SUBROUTINE LAPACKSOLV(A, b, x, FLAG, Dim)
+        IMPLICIT NONE
+        INTEGER, INTENT(IN) :: Dim
+        REAL(8), INTENT(IN), DIMENSION(0:Dim-1, 0:Dim-1) :: A
+        REAL(8), INTENT(IN), DIMENSION(0:Dim-1, 1) :: b
+        REAL(8), INTENT(OUT), DIMENSION(0:Dim-1,1) :: x
+        INTEGER, INTENT(OUT) :: FLAG
+        
+        REAL(8), DIMENSION(0:Dim-1, 0:Dim-1) :: A_LAPACK
+        REAL(8), DIMENSION(0:Dim-1, 1) :: pivot
+        
+        
+        ! DGESV is a LAPACK lib function and its syntax demands
+        ! that the matrix b comes out as the output. Hence this step
+        x = b
+        A_LAPACK = A
+        CALL DGESV(Dim, 1, A_LAPACK, Dim, pivot, x, Dim, FLAG) 
+END SUBROUTINE
+'''
+file('linsolv.f90', 'w').write(linsolv_src)
+cmdstring = 'f2py -L%s -llapack -c -m linsolv linsolv.f90 --fcompiler=gfortran' % LAPACK_PATH
+if not os.path.isfile('linsolv.so') or fort_recompile: os.system(cmdstring)
+if os.path.isfile('linsolv.f90'): os.remove('linsolv.f90')
+                
+
 class PDE:
-        def __init__(self, NComponents = 1, Mesh = None, StiffMat = None, MassMat = None):
+        def __init__(self, NComponents = 1, Mesh = None, StiffMat = None, MassMat = None, u = None):
                 self.NComponents = NComponents
                 self.Mesh = Mesh
                 self.StiffMat = StiffMat
                 self.MassMat = MassMat
+                if u is None: self.u = np.zeros([self.Mesh.NumNodes, self.NComponents])
         
         
         def getDirNodeArray(self, x):
@@ -61,7 +102,7 @@ class PDE:
                 for T in self.Mesh.Elements:
                         for n in range(self.NComponents):
                                 elemShapeFn = fem.ShapeFn(Mesh = self.Mesh, Element = T)
-                                elemSourceTerm = elemShapeFn.getSourceTermElement_P1(f_vals[T][:,n])
+                                elemSourceTerm = elemShapeFn.getSrcTermElement_P1(f_vals[T][:,n])
                                 for i, nodeI in enumerate(T): ret[nodeI,n] += elemSourceTerm[i]
 
 		return ret
@@ -114,7 +155,19 @@ class PDE:
                 pass
                 
                 
-        def makeSol(self, x):
+        def Solve(self, A, b):
+                # lapack solver
+                import linsolv
+                x, flag = linsolv.lapacksolv(a = A, b = b)
+                return x
+                
+        
+        def wrapSol(self, x):
+                x = x.flatten(order = 'F')
+                x = x.reshape((len(x),1))
+                return x
+                        
+        def unwrapSol(self, x):
                 x = x.reshape(self.Mesh.NumFreeNodes, self.NComponents, order = 'F')
                 sol = np.zeros([self.Mesh.NumNodes, self.NComponents])
                 for n in range(self.NComponents):
@@ -129,15 +182,7 @@ class PDE:
 
 
                                                        
-class Elliptic(PDE):
-        def __init__(self, NComponents = 1, Mesh = None, StiffMat = None, MassMat = None, u = None):
-                self.NComponents = NComponents
-                self.Mesh = Mesh
-                self.StiffMat = StiffMat
-                self.MassMat = MassMat
-                if u is None: self.u = np.zeros([self.Mesh.NumNodes, self.NComponents])
-                                 
-               
+class Elliptic(PDE):                 
         def AssembPDE(self):
                 # assemble LHS
                 K_Free = self.getFreeNodeArray(self.StiffMat)
@@ -149,14 +194,17 @@ class Elliptic(PDE):
 
 
                 # assemble Dirichlet terms
-                K_Dir = self.getDirNodeArray(self.StiffMat)
-                M_Dir = self.getDirNodeArray(self.MassMat)
-                K_Dir = self.AssembBlockStiffMat(K_Dir)
-                M_Dir = self.AssembBlockStiffMat(M_Dir)
-                A_Dir = self.AssembLHS(K_Dir, M_Dir)
-                u_Dir = self.getDirBC().flatten(order = 'F')
-                u_Dir = u_Dir.reshape(len(u_Dir), 1)
-                b_Dir = np.dot(A_Dir, u_Dir)               
+                if not self.Mesh.NumDirNodes:
+                        return np.zeros([self.Mesh.NumFreeNodes, 1])
+                else:        
+                        K_Dir = self.getDirNodeArray(self.StiffMat)
+                        M_Dir = self.getDirNodeArray(self.MassMat)
+                        K_Dir = self.AssembBlockStiffMat(K_Dir)
+                        M_Dir = self.AssembBlockStiffMat(M_Dir)
+                        A_Dir = self.AssembLHS(K_Dir, M_Dir)
+                        u_Dir = self.getDirBC().flatten(order = 'F')
+                        u_Dir = u_Dir.reshape(len(u_Dir), 1)
+                        b_Dir = np.dot(A_Dir, u_Dir)               
 
 
                 # assemble Neumann terms
@@ -176,16 +224,46 @@ class Elliptic(PDE):
                 return LHSMat, RHSVec
          
          
-
-class Parabolic():
-        def __init__(self, NComponents = 1, Mesh = None, StiffMat = None, MassMat = None, u = None):
-                self.NComponents = NComponents
-                self.Mesh = Mesh
-                self.StiffMat = StiffMat
-                self.MassMat = MassMat
-                if u is None: self.u = np.zeros([self.Mesh.NumNodes, self.NComponents])
-        
-        
+class Parabolic(PDE):
+        # turns out this is exactly same as that of the elliptic case
         def AssembPDE(self):
-                pass
+                # assemble LHS
+                K_Free = self.getFreeNodeArray(self.StiffMat)
+                M_Free = self.getFreeNodeArray(self.MassMat)
+                K_Free = self.AssembBlockStiffMat(K_Free)
+                M_Free = self.AssembBlockMassMat(M_Free)
+                LHSMat = self.AssembLHS(K_Free, M_Free)
                 
+                # assemble Dirichlet terms
+                if not self.Mesh.NumDirNodes:
+                        b_Dir = np.zeros([self.Mesh.NumFreeNodes, 1])
+                else:        
+                        K_Dir = self.getDirNodeArray(self.StiffMat)
+                        M_Dir = self.getDirNodeArray(self.MassMat)
+                        K_Dir = self.AssembBlockStiffMat(K_Dir)
+                        M_Dir = self.AssembBlockStiffMat(M_Dir)
+                        A_Dir = self.AssembLHS(K_Dir, M_Dir)
+                        u_Dir = self.getDirBC().flatten(order = 'F')
+                        u_Dir = u_Dir.reshape(len(u_Dir), 1)
+                        b_Dir = np.dot(A_Dir, u_Dir)               
+
+
+                # assemble Neumann terms
+                b_Neumann = self.getFreeNodeArray(self.getNeumannBC()).flatten(order = 'F')
+                b_Neumann = b_Neumann.reshape(len(b_Neumann),1)
+                
+                
+                # assemble source terms (may be nonlinear)
+                b_Src = self.getFreeNodeArray(self.getSrcTerm()).flatten(order = 'F')
+                b_Src = b_Src.reshape(len(b_Src), 1)  
+                
+                # assemble RHSVec (simply return the three vectors 
+                # and let the calling script do the assembly. This ensures
+                # generality for nonlinear cases)
+                RHSVec = (b_Src, b_Neumann, b_Dir)  
+               
+                return LHSMat, RHSVec
+                
+                
+        def checkStability(self):
+                 pass 

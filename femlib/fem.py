@@ -86,6 +86,8 @@ class Mesh:
 	        if not self.NumDirEdges:
 	                self.DirNodes = np.array([])
 	                self.FreeNodes = np.array(range(self.NumNodes), np.int32)
+	                self.NumDirNodes = 0
+	                self.NumFreeNodes = self.NumNodes
 	                return
 	                
 	        DirNodes = set(self.DirEdges.flatten())
@@ -255,7 +257,7 @@ class ShapeFn:
 		return ret
 
 
-	def getSourceTermElement_P1(self, f_vals):
+	def getSrcTermElement_P1(self, f_vals):
 		elem_area = self.getElemArea()	
 		ret =  (2.*elem_area/18.) * np.sum(np.array(f_vals)) * np.ones(3)
 		return ret
@@ -385,7 +387,7 @@ class Plot:
 		if showGrid: self.plotMesh()
 		
 		
-	def patternAnimate(self, dataFileList, Component = 0):
+	def patternAnimate(self, dataFileList, Component = 0, delay = 0.5):
 	        t = mpl_tri.Triangulation(self.Mesh.Nodes[:,0], self.Mesh.Nodes[:,1], self.Mesh.Elements)
 	        u0 = np.loadtxt(dataFileList[0])[:,Component].flatten()
 	        u0 = u0[:self.Mesh.NumNodes]
@@ -404,5 +406,5 @@ class Plot:
 	                cbar.set_clim(vmin = u.min(), vmax = u.max())
 	                cbar.draw_all()
 	                self.ax.set_title('Time = %d' % i)
-	             plt.pause(0.5)
+	             plt.pause(delay)
 		     

@@ -14,8 +14,9 @@ from pde import *
 testdata_dir = '/home/tanmoy/projects/FEM_course_project/code/testdata'
 
 
+#=============================================================================================================================================================
 def testMesh():
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0)
         
         m.NeumannEdges = m.BoundaryEdges 
@@ -40,9 +41,9 @@ def testMesh():
 	print m.FreeNodes
 	p.ax = ax2; p.plotBoundaries()
 
-
+#=============================================================================================================================================================
 def testShapeFnPlot():	
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	fig = plt.figure()
 	ax3d = Axes3D(fig)
@@ -50,9 +51,9 @@ def testShapeFnPlot():
 	p = Plot(Mesh = m, ax = ax3d)
 	p.plotShapeFunc(Node)  
 
-
+#=============================================================================================================================================================
 def testPatternPlot():
-	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
+	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	m.refineMesh();m.refineMesh()
 	ax = plt.subplot(111)
@@ -62,9 +63,9 @@ def testPatternPlot():
 	p = Plot(Mesh = m, ax = ax)
 	p.patternPlot(u_Node = u)
 
-
+#=============================================================================================================================================================
 def testElementMat():
-	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
+	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	T = m.Elements[22]	
 	s = ShapeFn(Mesh = m, Element = T)
@@ -79,9 +80,9 @@ def testElementMat():
 	print 'stiffmat = ', stiffmat
 	print 'massmat = ', massmat
 
-
+#=============================================================================================================================================================
 def testAssembly():
-	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
+	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0)
 	
 	m.NeumannEdges = m.BoundaryEdges 
@@ -137,19 +138,33 @@ def testAssembly():
         pde.AssembBlockMassMat = makeBlock 
         pde.AssembLHS = getLHS
         dirbc = pde.getDirBC()
-        A,b = pde.AssembPDE()
+        ret = pde.AssembPDE()
+        A = ret['LHS_Mat']
+        b0 = ret['RHSVec_Src']; b1 = ret['RHSVec_Neumann']; b2 = ret['RHSVec_Dir']
         
         print '\n\n================CHECK ASSEMBLED LHS MATRIX===================\n\n'
         print "DirBC = ", dirbc
         print "A = ", A
-        print "b =", b[0]+b[1]-b[2]
+        print "b =", b0+b1-b2
         print "DirBCSize = ", dirbc.shape
         print "ASize = ", A.shape
-        print "bsize =", b[0].shape, b[1].shape, b[2].shape
+        print "bsize =", b0.shape, b1.shape, b2.shape
         
+#=============================================================================================================================================================        
+def testLinSolver():
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
+        m = Mesh(K0)
+        sol = PDE(Mesh = m)
+        A = np.random.random((10,10))
+        b = np.random.random((10,1))
+        fort_sol = sol.Solve(A,b)
+        numpy_sol = np.linalg.solve(A,b)
+        print 'Fortran -- ', fort_sol
+        print '\n\n----------------------\n\n'
+        print 'Numpy -- ', numpy_sol
         
-        
-def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
+#=============================================================================================================================================================         
+def testPoisson(meshmatfile = 'testinitmesh.mat', showPlot = True):
         # init mesh
         K0 = importInitMesh(matfile = os.path.join(testdata_dir, meshmatfile))
         m = Mesh(K0)
@@ -224,10 +239,10 @@ def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
         b = rhs[0] + rhs[1] - rhs[2]
         
         # solve the lin alg problem naively
-        x = np.linalg.solve(A,b)
+        x = pde.Solve(A,b)
         
         # construct the full solution 
-        u = pde.makeSol(x)
+        u = pde.unwrapSol(x)
 
         u_ex = np.zeros([m.NumNodes, NComponents])
         for i in range(m.NumNodes):
@@ -269,7 +284,7 @@ def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
 	               
 	return (L2err, L1err)
 	
-
+#=============================================================================================================================================================
 def testErrorScaling():
 	meshmatfile_fmt = 'testmesh%d.mat'
 	hmax = np.linspace(0.1,0.25,21)
@@ -309,13 +324,121 @@ def testErrorScaling():
 	print "L2 error order = ", slopeL2
 	print "L1 error order = ", slopeL1
 
+#=============================================================================================================================================================
+def testLinDiffRxn():    
+        # init mesh
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
+        m = Mesh(K0)
+        
+        # linear uncoupled parabolic test problems
+        #1) u1(x,y) = 1 -x - y
+        #2) u2(x,y) = (1 - x^2 - y^2)/4
+                     
+        NComponents = 2
+
+        # set boundary conditions
+        m.NeumannEdges = m.BoundaryEdges
+        m.NumNeumannEdges = len(m.NeumannEdges)
+        def gNeumann(Mesh = m): 
+                return [lambda p: 0., lambda p: 0.]
+        
+        # get boundary partition
+        m.partitionNodes()
+        
+        # assemble stiffness and mass matrices
+        a = Assemb(Mesh = m)
+	a.AssembStiffMat()
+	a.AssembMassMat()
+        K = a.globalStiffMat
+        M = a.globalMassMat
+        
+        # set source function
+        def fsrc(Mesh = m): 
+                return [lambda p: 0., lambda p: 0.]
+                               
+        # assemble LHS of final lin. alg problem
+        DiffCoeff = [1000., 1]
+        def makeBlockMat(x):
+                zero = np.zeros([x.shape[0], x.shape[1]])
+                block = []
+                for i in range(NComponents):
+                        row = []
+                        for j in range(NComponents):
+                                if i == j: col = DiffCoeff[n]*x
+                                else: col = zero
+                                row.append(col)
+                        block.append(row)
+                        
+                block = np.array(np.bmat(block))
+          
+                return block
+         
+        def getlhs(K,M): return M
+        
+        # define the PDE
+        pde = Parabolic(NComponents = NComponents, Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat)
+        pde.setNeumannFunc = gNeumann
+        pde.setSrcFunc = fsrc
+        pde.AssembBlockStiffMat = makeBlockMat
+        pde.AssembBlockMassMat = makeBlockMat
+        pde.AssembLHS = getlhs
+        
+        # initial condition
+        # put a point source in and out of a radius of 0.2
+        f0 = [lambda p: 1. if np.sqrt(p[0]**2. + p[1]**2.) <= 0.2 else 0.,
+              lambda p: 0. if np.sqrt(p[0]**2. + p[1]**2.) >= 0.2 else 0.]
+             
+        u0 = np.zeros([m.NumNodes, NComponents])
+        for i, node in enumerate(m.Nodes):
+                for n in range(NComponents):
+                        u0[i,n] = f0[n](node)
+        
+        # start time loop
+        import linsolv
+        K_free = makeBlockMat(pde.getFreeNodeArray(K))
+        outfile_fmt = os.path.join(testdata_dir, 'testdiffrxn%d.dat')
+        np.savetxt(outfile_fmt % 0, u0)
+        NSteps = 200; dt = 1e-6
+        u_old = u0
+        loop = True
+        if loop:
+                for i in range(NSteps):
+                        print 'Timestep: ', i
+                        pde.u = u_old
+                        M_free, vecs = pde.AssembPDE()
+                        F = vecs[0]; G = vecs[1]; D = vecs[2]
+                        x_old = pde.wrapSol(u_old)
+                        rhs = linsolv.mul(a = M_free, b = x_old) - dt * linsolv.mul(a = K_free, b = x_old) + dt * (F + G)
+                        x_new = pde.Solve(M_free, rhs)
+                        u_new = pde.unwrapSol(x_new)
+                        
+                        # write to file and update
+                        np.savetxt(outfile_fmt%(i+1), u_new)     
+                        u_old = u_new
+                  
+        # pattern animations
+        raw_input('Press any key to start animation...')
+        p = Plot(Mesh = m)
+        fig = plt.figure(figsize = (14,6), facecolor = 'w', edgecolor = 'w')
+        nrows = 1; ncols = NComponents
+        datafilelist = []
+        [datafilelist.append(outfile_fmt % x) for x in range(NSteps)]
+        for n in range(NComponents):
+                ax = fig.add_subplot(nrows, ncols, n+1)
+        	p.ax = ax
+        	p.patternAnimate(datafilelist, n, delay = 0.05)
+
+#=============================================================================================================================================================
+
 if __name__ == '__main__':
 	#testMesh()
 	#testShapeFnPlot()
 	#testPatternPlot()
 	#testShapeFnPlot()		
 	#testAssembly()
+	#testLinSolver()
 	#testPoisson()
 	#testErrorScaling()
+	testLinDiffRxn()
 
 plt.show()
