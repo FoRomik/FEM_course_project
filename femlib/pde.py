@@ -10,6 +10,21 @@ class PDE:
                 self.StiffMat = StiffMat
                 self.MassMat = MassMat
         
+        
+        def getDirNodeArray(self, x):
+                Ind = self.Mesh.FreeNodes
+                Dir = self.Mesh.DirNodes
+                if x.shape[1] > self.NComponents: x = x[Ind][:,Dir]
+                return x
+        
+        
+        def getFreeNodeArray(self, x):
+                Ind = self.Mesh.FreeNodes
+                if x.shape[1] > self.NComponents: x = x[Ind][:,Ind]
+                else: x = x[Ind]                
+                return x
+        
+        
         def setDirFunc(self, Mesh = None):
                 # returns a list of lambda functions of a co-ordinate (x,y) 
                 # Can vary on the mesh since the mesh is passed
@@ -31,38 +46,6 @@ class PDE:
                 pass
 
         
-        def AssembLHS(self, StiffMat = None, MassMat = None):
-                pass
-
-
-        def AssemPDE(self):
-                pass
-                
-                
-        def makeSol(self, x):
-                x = x.reshape(self.Mesh.NumFreeNodes, self.NComponents, order = 'F')
-                sol = np.zeros([self.Mesh.NumNodes, self.NComponents])
-                for n in range(self.NComponents):
-                        for i, node in enumerate(self.Mesh.FreeNodes):
-                                sol[node, n] = x[i,n]
-                        for node in self.Mesh.DirNodes:
-                                p = self.Mesh.Nodes[node]
-                                gDir = self.setDirFunc(Mesh = self.Mesh)[n]
-                                sol[node,n] = gDir(p)
-                
-                return sol
-
-
-                                                       
-class Elliptic(PDE):
-        def __init__(self, NComponents = 1, Mesh = None, StiffMat = None, MassMat = None, u = None):
-                self.NComponents = NComponents
-                self.Mesh = Mesh
-                self.StiffMat = StiffMat
-                self.MassMat = MassMat
-                if u is None: self.u = np.zeros([self.Mesh.NumNodes, self.NComponents])
-                                 
-               
         def getAllSrc(self):
                 ret = np.zeros([self.Mesh.NumNodes, self.NComponents]) 
                 for i, node in enumerate(self.Mesh.Nodes):
@@ -114,38 +97,72 @@ class Elliptic(PDE):
                  
                 return u_Dir
                 
+                 
+        def AssembLHS(self, StiffMat = None, MassMat = None):
+                pass
+        
+        
+        def AssembBlockStiffMat(self, StiffMat = None):
+                pass       
+
+
+        def AssembBlockMassMat(self, MassMat = None):
+                pass
+
+
+        def AssembPDE(self):
+                pass
                 
-        def getDirNodeArray(self, x):
-                Ind = self.Mesh.FreeNodes
-                Dir = self.Mesh.DirNodes
-                if x.shape[1] > self.NComponents: x = x[Ind][:,Dir]
-                return x
-        
-        
-        def getFreeNodeArray(self, x):
-                Ind = self.Mesh.FreeNodes
-                if x.shape[1] > self.NComponents: x = x[Ind][:,Ind]
-                else: x = x[Ind]                
-                return x
-        
-        
-        def AssemPDE(self):
+                
+        def makeSol(self, x):
+                x = x.reshape(self.Mesh.NumFreeNodes, self.NComponents, order = 'F')
+                sol = np.zeros([self.Mesh.NumNodes, self.NComponents])
+                for n in range(self.NComponents):
+                        for i, node in enumerate(self.Mesh.FreeNodes):
+                                sol[node, n] = x[i,n]
+                        for node in self.Mesh.DirNodes:
+                                p = self.Mesh.Nodes[node]
+                                gDir = self.setDirFunc(Mesh = self.Mesh)[n]
+                                sol[node,n] = gDir(p)
+                
+                return sol
+
+
+                                                       
+class Elliptic(PDE):
+        def __init__(self, NComponents = 1, Mesh = None, StiffMat = None, MassMat = None, u = None):
+                self.NComponents = NComponents
+                self.Mesh = Mesh
+                self.StiffMat = StiffMat
+                self.MassMat = MassMat
+                if u is None: self.u = np.zeros([self.Mesh.NumNodes, self.NComponents])
+                                 
+               
+        def AssembPDE(self):
                 # assemble LHS
                 K_Free = self.getFreeNodeArray(self.StiffMat)
                 M_Free = self.getFreeNodeArray(self.MassMat)
-                LHSMat = self.AssembLHS(K_Free,M_Free)
-               
+                K_Free = self.AssembBlockStiffMat(K_Free)
+                M_Free = self.AssembBlockMassMat(M_Free)
+                
+                LHSMat = self.AssembLHS(K_Free, M_Free)
+
+
+                # assemble Dirichlet terms
+                K_Dir = self.getDirNodeArray(self.StiffMat)
+                M_Dir = self.getDirNodeArray(self.MassMat)
+                K_Dir = self.AssembBlockStiffMat(K_Dir)
+                M_Dir = self.AssembBlockStiffMat(M_Dir)
+                A_Dir = self.AssembLHS(K_Dir, M_Dir)
+                u_Dir = self.getDirBC().flatten(order = 'F')
+                u_Dir = u_Dir.reshape(len(u_Dir), 1)
+                b_Dir = np.dot(A_Dir, u_Dir)               
+
+
                 # assemble Neumann terms
                 b_Neumann = self.getFreeNodeArray(self.getNeumannBC()).flatten(order = 'F')
                 b_Neumann = b_Neumann.reshape(len(b_Neumann),1)
                 
-                # assemble Dirichlet terms
-                K_Dir = self.getDirNodeArray(self.StiffMat)
-                M_Dir = self.getDirNodeArray(self.MassMat)
-                A_Dir = self.AssembLHS(K_Dir, M_Dir)
-                u_Dir = self.getDirBC().flatten(order = 'F')
-                u_Dir = u_Dir.reshape(len(u_Dir), 1)
-                b_Dir = np.dot(A_Dir, u_Dir)
                 
                 # assemble source terms (may be nonlinear)
                 b_Src = self.getFreeNodeArray(self.getSrcTerm()).flatten(order = 'F')
@@ -159,4 +176,16 @@ class Elliptic(PDE):
                 return LHSMat, RHSVec
          
          
+
+class Parabolic():
+        def __init__(self, NComponents = 1, Mesh = None, StiffMat = None, MassMat = None, u = None):
+                self.NComponents = NComponents
+                self.Mesh = Mesh
+                self.StiffMat = StiffMat
+                self.MassMat = MassMat
+                if u is None: self.u = np.zeros([self.Mesh.NumNodes, self.NComponents])
         
+        
+        def AssembPDE(self):
+                pass
+                

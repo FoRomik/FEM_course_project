@@ -131,10 +131,13 @@ def testAssembly():
         print "SrcTermSize = ", srcterm.shape
         print "NeumannBCSize = ", neumannbc.shape
         
-        def getLHS(K,M): return K+M 
+        def makeBlock(X): return X
+        def getLHS(K,M): return K+M
+        pde.AssembBlockStiffMat = makeBlock
+        pde.AssembBlockMassMat = makeBlock 
         pde.AssembLHS = getLHS
         dirbc = pde.getDirBC()
-        A,b = pde.AssemPDE()
+        A,b = pde.AssembPDE()
         
         print '\n\n================CHECK ASSEMBLED LHS MATRIX===================\n\n'
         print "DirBC = ", dirbc
@@ -142,7 +145,7 @@ def testAssembly():
         print "b =", b[0]+b[1]-b[2]
         print "DirBCSize = ", dirbc.shape
         print "ASize = ", A.shape
-        print "bsize =", b.shape
+        print "bsize =", b[0].shape, b[1].shape, b[2].shape
         
         
         
@@ -190,30 +193,34 @@ def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
                         lambda p: p[0]**3. + p[1]**3.]
                                
         # assemble LHS of final lin. alg problem
-        def getLHS(K,M):
-                zero = np.zeros([K.shape[0], K.shape[1]])
-                lhs = []
+        def makeBlockMat(x):
+                zero = np.zeros([x.shape[0], x.shape[1]])
+                block = []
                 for i in range(NComponents):
                         row = []
                         for j in range(NComponents):
-                                if i == j: col = K
+                                if i == j: col = x
                                 else: col = zero
                                 row.append(col)
-                        lhs.append(row)
+                        block.append(row)
                         
-                lhs = np.array(np.bmat(lhs))
+                block = np.array(np.bmat(block))
           
-                return lhs
+                return block
          
+        def getlhs(K,M): return K
+        
         # define the PDE
         pde = Elliptic(NComponents = NComponents, Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat)
         pde.setDirFunc = gdir
         pde.setSrcFunc = fsrc
-        pde.AssembLHS = getLHS
+        pde.AssembBlockStiffMat = makeBlockMat
+        pde.AssembBlockMassMat = makeBlockMat
+        pde.AssembLHS = getlhs
         
         # generate final lin alg problem
         print 'Assembling Lin. Alg. problem...'
-        A,rhs = pde.AssemPDE()
+        A, rhs = pde.AssembPDE()
         b = rhs[0] + rhs[1] - rhs[2]
         
         # solve the lin alg problem naively
@@ -308,7 +315,7 @@ if __name__ == '__main__':
 	#testPatternPlot()
 	#testShapeFnPlot()		
 	#testAssembly()
-	testPoisson()
+	#testPoisson()
 	#testErrorScaling()
 
 plt.show()
