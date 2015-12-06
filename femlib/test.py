@@ -8,13 +8,14 @@ from scipy import stats
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from fem import *
+from pde import *
 
 
 testdata_dir = '/home/tanmoy/projects/FEM_course_project/code/testdata'
 
 
 def testMesh():
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
         m = Mesh(K0)
         
         m.NeumannEdges = m.BoundaryEdges 
@@ -41,7 +42,7 @@ def testMesh():
 
 
 def testShapeFnPlot():	
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	fig = plt.figure()
 	ax3d = Axes3D(fig)
@@ -51,7 +52,7 @@ def testShapeFnPlot():
 
 
 def testPatternPlot():
-	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	m.refineMesh();m.refineMesh()
 	ax = plt.subplot(111)
@@ -63,7 +64,7 @@ def testPatternPlot():
 
 
 def testElementMat():
-	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	T = m.Elements[22]	
 	s = ShapeFn(Mesh = m, Element = T)
@@ -80,7 +81,7 @@ def testElementMat():
 
 
 def testAssembly():
-	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'initmesh.mat'))
+	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
         m = Mesh(K0)
 	
 	m.NeumannEdges = m.BoundaryEdges 
@@ -109,13 +110,16 @@ def testAssembly():
 	print "StiffMatsize = ", a.globalStiffMat.shape
 	print "MassMatSize = ", a.globalMassMat.shape
        
-        gdir = [lambda p: 1]
-        gneumann = [lambda p: 0]
-        pde = PDE(Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat, 
-                  gDir = gdir, gNeumann = gneumann)
+        pde = Elliptic(Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat)
         
-        def srcFunc(p, u): return [10 * p[0] * p[1]]
-        pde.srcFunc = srcFunc          
+        # set source term and boundary conditions
+        def fsrc(Mesh = m, u = None): return [lambda p: 10 * p[0] * p[1]]
+        def gdir(Mesh = m): return [lambda p: 1]
+        def gneumann(Mesh = m): return [lambda p: 0]
+        pde.setSrcFunc = fsrc     
+        pde.setDirFunc = gdir
+        pde.setNeumannFunc = gneumann     
+        
         allsrc = pde.getAllSrc()
         srcterm = pde.getSrcTerm()
         neumannbc = pde.getNeumannBC()
@@ -127,11 +131,10 @@ def testAssembly():
         print "SrcTermSize = ", srcterm.shape
         print "NeumannBCSize = ", neumannbc.shape
         
-        def getLHS(K,M): return K+M
-               
-        pde.getLHS = getLHS
+        def getLHS(K,M): return K+M 
+        pde.AssembLHS = getLHS
         dirbc = pde.getDirBC()
-        A,b = pde.load()
+        A,b = pde.AssemPDE()
         
         print '\n\n================CHECK ASSEMBLED LHS MATRIX===================\n\n'
         print "DirBC = ", dirbc
@@ -148,11 +151,25 @@ def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
         K0 = importInitMesh(matfile = os.path.join(testdata_dir, meshmatfile))
         m = Mesh(K0)
         
+        
+        # linear uncoupled elliptic test problems
+        #1) u1(x,y) = 1 -x - y
+        #2) u2(x,y) = (1 - x^2 - y^2)/4
+        #3) u3(x,y) = (1 - x^4 - y^4)/12
+        
+        f = [lambda p: (1 - p[0] - p[1]),  
+             lambda p: (1. - p[0]**2. - p[1]**2.)/4.,
+             lambda p: (1. - p[0]**3. - p[1]**3.)/6.,
+             lambda p: (1. - p[0]**4. - p[1]**4.)/12.,
+             lambda p: (1. - p[0]**5. - p[1]**5.)/20.]
+             
+        
+        NComponents = len(f)
+        
         # set boundary conditions
         m.DirEdges = m.BoundaryEdges
         m.NumDirEdges = len(m.DirEdges)
-        g = [lambda p: (1 -p[0] - p[1]),  
-             lambda p: (1.-p[0]**3.-p[1]**3.)/6.]
+        def gdir(Mesh = m): return f
         
         # get boundary partition
         m.partitionNodes()
@@ -165,23 +182,38 @@ def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
         M = a.globalMassMat
         
         # set source function
-        def fsrc(p,u): return [0., 
-                               p[0]+p[1] ]
-        
+        def fsrc(Mesh = m): 
+                return [lambda p: 0., 
+                        lambda p: 1.,
+                        lambda p: p[0] + p[1],
+                        lambda p: p[0]**2. + p[1]**2.,
+                        lambda p: p[0]**3. + p[1]**3.]
+                               
         # assemble LHS of final lin. alg problem
         def getLHS(K,M):
                 zero = np.zeros([K.shape[0], K.shape[1]])
-                lhs = np.bmat([[K, zero], [zero, K]])
-                return np.array(lhs)
+                lhs = []
+                for i in range(NComponents):
+                        row = []
+                        for j in range(NComponents):
+                                if i == j: col = K
+                                else: col = zero
+                                row.append(col)
+                        lhs.append(row)
+                        
+                lhs = np.array(np.bmat(lhs))
+          
+                return lhs
          
         # define the PDE
-        pde = PDE(NComponents = 2, Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat, gDir = g)
-        pde.srcFunc = fsrc
-        pde.getLHS = getLHS
+        pde = Elliptic(NComponents = NComponents, Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat)
+        pde.setDirFunc = gdir
+        pde.setSrcFunc = fsrc
+        pde.AssembLHS = getLHS
         
         # generate final lin alg problem
         print 'Assembling Lin. Alg. problem...'
-        A,b = pde.load()
+        A,b = pde.AssemPDE()
         
         # solve the lin alg problem naively
         x = np.linalg.solve(A,b)
@@ -189,19 +221,18 @@ def testPoisson(meshmatfile = 'testmesh0.mat', showPlot = True):
         # construct the full solution 
         u = pde.makeSol(x)
 
-        # analytical exact solution
-        u_ex = np.zeros([m.NumNodes,pde.NComponents])
+        u_ex = np.zeros([m.NumNodes, NComponents])
         for i in range(m.NumNodes):
-                p = m.Nodes[i]
-                u_ex[i,0] = 1- p[0] - p[1]
-                u_ex[i,1] = (1./6.)*(1 - p[0]**3. - p[1]**3.)
+                for n in range(NComponents):
+                        p = m.Nodes[i]
+                        u_ex[i,n] = f[n](p)
         
         # plot the solution and compare with analytical sol
         if showPlot:
                 p = Plot(Mesh = m)
 	        fig = plt.figure(figsize = (12,8), facecolor = 'w', edgecolor = 'w')
-        	nrows = pde.NComponents ; ncols = 3
-        	for n in range(pde.NComponents):
+        	nrows = NComponents ; ncols = 3
+        	for n in range(NComponents):
         	        ind_ex =  3*n+1
         	        ind_fem = 3*n+2
         	        ind_err = 3*n+3
@@ -276,7 +307,7 @@ if __name__ == '__main__':
 	#testPatternPlot()
 	#testShapeFnPlot()		
 	#testAssembly()
-	#testPoisson()
-	testErrorScaling()
+	testPoisson()
+	#testErrorScaling()
 
 plt.show()

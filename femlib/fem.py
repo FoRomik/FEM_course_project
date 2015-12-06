@@ -61,13 +61,16 @@ class Mesh:
 				j = np.max(pair)
 				self.EdgeMatrix[i,j] = 1
 
+	
 	def setNeumannBoundary(self, NeumannEdges = None):
 	        # to be defined by the problem
 	        return NeumannEdges
 	
+	
 	def setDirBoundary(self, DirEdges = None):
 	        # to be defined by the problem
 	        return DirEdges
+	
 	
 	def loadBoundaries(self):
 	        self.DirEdges = self.setDirBoundary()
@@ -78,6 +81,7 @@ class Mesh:
 	        del self.BoundaryEdges
 	        del self.NumBoundaryEdges
 	        
+	
 	def partitionNodes(self):
 	        if not self.NumDirEdges:
 	                self.DirNodes = np.array([])
@@ -94,6 +98,7 @@ class Mesh:
 	                self.DirNodes = np.append(self.DirNodes, DirNodes.pop())
                 while len(FreeNodes) > 0:
                         self.FreeNodes = np.append(self.FreeNodes, FreeNodes.pop())
+	
 	
 	def refineMesh(self):
 		current_Elements = self.Elements
@@ -194,11 +199,13 @@ class ShapeFn:
 		self.Mesh = Mesh
                 self.NeumannEdge = NeumannEdge
                 
+
 	def getElemArea(self):
 		vertices = self.Mesh.Nodes[self.Element]
 		T = np.append(np.array([[1],[1],[1]]), vertices, axis = 1)
 		area = np.linalg.det(T)
 		return area
+
 	
 	def getSupport(self, Node):
 		NodeIndex = np.where(self.Mesh.Nodes == Node)[0][0]		
@@ -209,6 +216,7 @@ class ShapeFn:
 		support = np.array(support)
 		return support	
 
+
 	def getLocalShapeFn(self, Node = None):
 		elem_area = self.__getElemArea()
 		vertices = self.Mesh.Nodes[self.Element]
@@ -218,6 +226,7 @@ class ShapeFn:
 		
 		N = np.linalg.det(T) / elem_area
 		return N
+
 
 	def getStiffMatElement_P1(self):
 		vertices = self.Mesh.Nodes[self.Element]		
@@ -236,6 +245,7 @@ class ShapeFn:
 		#ret = np.array(ret)
 		return ret
 
+
 	def getMassMatElement_P1(self):
 		x = np.array([ [2,1,1],
 			       [1,2,1],
@@ -244,10 +254,12 @@ class ShapeFn:
 		ret = 2. * elem_area * x / 24.
 		return ret
 
+
 	def getSourceTermElement_P1(self, f_vals):
 		elem_area = self.getElemArea()	
 		ret =  (2.*elem_area/18.) * np.sum(np.array(f_vals)) * np.ones(3)
 		return ret
+
 			       
         def getNeumannVecEdge_P1(self, g):
                 p0 = self.Mesh.Nodes[self.NeumannEdge[0]]
@@ -257,6 +269,7 @@ class ShapeFn:
                 return ret
 
 
+
 class Assemb:
 	def __init__(self, Mesh = None):
 		self.Mesh = Mesh
@@ -264,6 +277,7 @@ class Assemb:
 		self.globalMassMat = None
 		self.RHSVec = None
 	
+
 	def getAllElementAreas(self):
 	        shapefunc = ShapeFn(Mesh = self.Mesh)
 	        areas = np.zeros(len(self.Mesh.Elements))
@@ -272,6 +286,7 @@ class Assemb:
 	                areas[i] = shapefunc.getElemArea()
 	        return areas
 	
+
 	def AssembStiffMat(self):
 		self.globalStiffMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])	
 		for T in self.Mesh.Elements:
@@ -281,6 +296,7 @@ class Assemb:
 				for j, nodeJ in enumerate(T):
 					self.globalStiffMat[nodeI, nodeJ] += elemStiffMat[i, j]
 					
+
 	def AssembMassMat(self):
 	        self.globalMassMat = np.zeros([self.Mesh.NumNodes, self.Mesh.NumNodes])	
 	        for T in self.Mesh.Elements:
@@ -291,137 +307,13 @@ class Assemb:
 					self.globalMassMat[nodeI, nodeJ] += elemMassMat[i, j]
 	
 
-
-class PDE:
-        def __init__(self, NComponents = 1, Mesh = None, StiffMat = None, MassMat = None, gNeumann = None, gDir = None, u = None):
-                self.NComponents = NComponents
-                self.Mesh = Mesh
-                self.StiffMat = StiffMat
-                self.MassMat = MassMat
-                self.gNeumann = gNeumann
-                self.gDir = gDir
-                
-                if u is None: self.u = np.zeros([self.Mesh.NumNodes, self.NComponents])
-                else: self.u = u
-                self.sol = None
-                                 
-                #Flags
-                self.isDirAssembled = False
-                self.isNeumannAssembled = False
-                self.isSrcAssembled = False
-                                              
-                
-        def getLHS(self, StiffMat, MassMat):
-                pass
-                # depends on the problem
-                # returns a master matrix on the LHS, that is some
-                # combination of StiffMat and MassMat
-        
-        def srcFunc(self, Node, u):
-                pass
-                # depends on the problem
-                # can be set to a lambda function dependent on 
-                # space or as a lookup table
-               
-        def getAllSrc(self):
-                ret = np.zeros([self.Mesh.NumNodes, self.NComponents]) 
-                for i, node in enumerate(self.Mesh.Nodes):
-                        f = self.srcFunc(node, self.u)
-                        ret[i,:] = f[:] 
-                return ret        
-            
-        def getSrcTerm(self):
-	        ret = np.zeros([self.Mesh.NumNodes,self.NComponents])
-	        f_vals = self.getAllSrc()
-                for T in self.Mesh.Elements:
-                        for n in range(self.NComponents):
-                                elemShapeFn = ShapeFn(Mesh = self.Mesh, Element = T)
-                                elemSourceTerm = elemShapeFn.getSourceTermElement_P1(f_vals[T][:,n])
-                                for i, nodeI in enumerate(T): ret[nodeI,n] += elemSourceTerm[i]
-		
-		self.isSrcAssembled = True
-		return ret
-
-        def getNeumannBC(self):
-	        if not self.Mesh.NumNeumannEdges: 
-	                self.isNeumannAssembled = True
-	                return np.zeros([self.Mesh.NumNodes, self.NComponents])
-	        ret = np.zeros([self.Mesh.NumNodes, self.NComponents])
-	        for e in self.Mesh.NeumannEdges:
-	                for n in range(self.NComponents):
-	                        elemShapeFn = ShapeFn(Mesh = self.Mesh, NeumannEdge = e)
-	                        edgeNeumannVec = elemShapeFn.getNeumannVecEdge_P1(g = self.gNeumann[n])
-	                        for i, nodeI in enumerate(e): ret[nodeI,n] += edgeNeumannVec[i]
-                
-                self.isNeumannAssembled = True
-                return ret
-      
-        def getDirBC(self):
-                if not self.Mesh.NumDirEdges: 
-                        self.isDirAssembled = True
-                        return np.zeros([self.Mesh.NumDirNodes,self.NComponents])
-                u_Dir = np.zeros([self.Mesh.NumDirNodes, self.NComponents])
-                for i, node in enumerate(self.Mesh.DirNodes):
-                        for n in range(self.NComponents): 
-                                p = self.Mesh.Nodes[node]
-                                u_Dir[i,n] = self.gDir[n](p)
-                 
-                return u_Dir
-                
-        def getDirNodeArray(self, x):
-                Ind = self.Mesh.FreeNodes
-                Dir = self.Mesh.DirNodes
-                if x.shape[1] > self.NComponents: x = x[Ind][:,Dir]
-                return x
-        
-        def getFreeNodeArray(self, x):
-                Ind = self.Mesh.FreeNodes
-                if x.shape[1] > self.NComponents: x = x[Ind][:,Ind]
-                else: x = x[Ind]                
-                return x
-        
-        def load(self):
-                # assemble final LHS
-                K_Free = self.getFreeNodeArray(self.StiffMat)
-                M_Free = self.getFreeNodeArray(self.MassMat)
-                LHSMat = self.getLHS(K_Free,M_Free)
-               
-                # assemble final RHS
-                b_Src = self.getFreeNodeArray(self.getSrcTerm())
-                b_Neumann = self.getFreeNodeArray(self.getNeumannBC())
-                b_Free = (b_Src + b_Neumann).flatten(order = 'F')
-                b_Free = b_Free.reshape(len(b_Free), 1)
-                
-                K_Dir = self.getDirNodeArray(self.StiffMat)
-                M_Dir = self.getDirNodeArray(self.MassMat)
-                A_Dir = self.getLHS(K_Dir, M_Dir)
-                u_Dir = self.getDirBC().flatten(order = 'F')
-                u_Dir = u_Dir.reshape(len(u_Dir), 1)
-                b_Dir = np.dot(A_Dir, u_Dir)
-                
-                RHSVec = b_Free - b_Dir
-                  
-                return LHSMat, RHSVec
-         
-         
-        def makeSol(self, x):
-                x = x.reshape(self.Mesh.NumFreeNodes, self.NComponents, order = 'F')
-                sol = np.zeros([self.Mesh.NumNodes, self.NComponents])
-                for n in range(self.NComponents):
-                        for i, node in enumerate(self.Mesh.FreeNodes):
-                                sol[node, n] = x[i,n]
-                        for node in self.Mesh.DirNodes:
-                                p = self.Mesh.Nodes[node]
-                                sol[node,n] = self.gDir[n](p)
-                
-                return sol
-
 	        	        
 class Plot:
 	def __init__(self, Mesh, ax = None):
 		self.Mesh = Mesh		
 		self.ax = ax
 	
+
 	def plotBoundaries(self):		
 	        # plot the interior
                 for i in range(self.Mesh.NumNodes):
