@@ -169,7 +169,6 @@ def testPoisson(meshmatfile = 'testinitmesh.mat', showPlot = True):
         K0 = importInitMesh(matfile = os.path.join(testdata_dir, meshmatfile))
         m = Mesh(K0)
         
-        
         # linear uncoupled elliptic test problems
         #1) u1(x,y) = 1 -x - y
         #2) u2(x,y) = (1 - x^2 - y^2)/4
@@ -327,20 +326,21 @@ def testErrorScaling():
 #=============================================================================================================================================================
 def testLinDiffRxn():    
         # init mesh
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testmesh0.mat'))
+        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0)
         
-        # linear uncoupled parabolic test problems
-        #1) u1(x,y) = 1 -x - y
-        #2) u2(x,y) = (1 - x^2 - y^2)/4
-                     
-        NComponents = 2
+        NComponents = 1
 
         # set boundary conditions
+        ## Neumann
         m.NeumannEdges = m.BoundaryEdges
         m.NumNeumannEdges = len(m.NeumannEdges)
-        def gNeumann(Mesh = m): 
-                return [lambda p: 0., lambda p: 0.]
+        def gNeumann(Mesh = m): return [lambda p: 0.]
+        
+        ## Dirichlet
+        #m.DirEdges = m.BoundaryEdges
+        #m.NumDirEdges = len(m.DirEdges)
+        #def gDir(Mesh = m): return [lambda p: -1]
         
         # get boundary partition
         m.partitionNodes()
@@ -353,40 +353,23 @@ def testLinDiffRxn():
         M = a.globalMassMat
         
         # set source function
-        def fsrc(Mesh = m): 
-                return [lambda p: 0., lambda p: 0.]
+        def fsrc(Mesh = m):  return [lambda p: 0.]
                                
         # assemble LHS of final lin. alg problem
-        DiffCoeff = [1000., 1]
-        def makeBlockMat(x):
-                zero = np.zeros([x.shape[0], x.shape[1]])
-                block = []
-                for i in range(NComponents):
-                        row = []
-                        for j in range(NComponents):
-                                if i == j: col = DiffCoeff[n]*x
-                                else: col = zero
-                                row.append(col)
-                        block.append(row)
-                        
-                block = np.array(np.bmat(block))
-          
-                return block
-         
+        def makeBlockMat(x): return x
         def getlhs(K,M): return M
         
         # define the PDE
         pde = Parabolic(NComponents = NComponents, Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat)
         pde.setNeumannFunc = gNeumann
+        #pde.setDirFunc = gDir
         pde.setSrcFunc = fsrc
         pde.AssembBlockStiffMat = makeBlockMat
         pde.AssembBlockMassMat = makeBlockMat
         pde.AssembLHS = getlhs
         
         # initial condition
-        # put a point source in and out of a radius of 0.2
-        f0 = [lambda p: 1. if np.sqrt(p[0]**2. + p[1]**2.) <= 0.2 else 0.,
-              lambda p: 0. if np.sqrt(p[0]**2. + p[1]**2.) >= 0.2 else 0.]
+        f0 = [lambda p: 1. if np.sqrt(p[0]**2 + p[1]**2) <= 0.01 else 0.]
              
         u0 = np.zeros([m.NumNodes, NComponents])
         for i, node in enumerate(m.Nodes):
@@ -398,7 +381,11 @@ def testLinDiffRxn():
         K_free = makeBlockMat(pde.getFreeNodeArray(K))
         outfile_fmt = os.path.join(testdata_dir, 'testdiffrxn%d.dat')
         np.savetxt(outfile_fmt % 0, u0)
-        NSteps = 200; dt = 1e-6
+        dt = (1-0.5) * m.Diam**2 / 6. 
+        
+        print "dt = ", dt ; raw_input()
+        
+        NSteps = 100
         u_old = u0
         loop = True
         if loop:
@@ -408,7 +395,8 @@ def testLinDiffRxn():
                         M_free, vecs = pde.AssembPDE()
                         F = vecs[0]; G = vecs[1]; D = vecs[2]
                         x_old = pde.wrapSol(u_old)
-                        rhs = linsolv.mul(a = M_free, b = x_old) - dt * linsolv.mul(a = K_free, b = x_old) + dt * (F + G)
+                        rhs = linsolv.mul(a = M_free, b = x_old) - dt * linsolv.mul(a = K_free, b = x_old) + dt * F 
+                              #+ dt * G - linsolv.mul(a = M_free, b = D)
                         x_new = pde.Solve(M_free, rhs)
                         u_new = pde.unwrapSol(x_new)
                         
@@ -419,16 +407,16 @@ def testLinDiffRxn():
         # pattern animations
         raw_input('Press any key to start animation...')
         p = Plot(Mesh = m)
-        fig = plt.figure(figsize = (14,6), facecolor = 'w', edgecolor = 'w')
+        fig = plt.figure(figsize = (5,5), facecolor = 'w', edgecolor = 'w')
         nrows = 1; ncols = NComponents
         datafilelist = []
         [datafilelist.append(outfile_fmt % x) for x in range(NSteps)]
         for n in range(NComponents):
                 ax = fig.add_subplot(nrows, ncols, n+1)
         	p.ax = ax
-        	p.patternAnimate(datafilelist, n, delay = 0.05)
+        	p.patternAnimate(dataFileList = datafilelist, Component = n, delay = None)
 
-#=============================================================================================================================================================
+#============================================================================================================================================================
 
 if __name__ == '__main__':
 	#testMesh()

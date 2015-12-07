@@ -173,10 +173,11 @@ class PDE:
                 for n in range(self.NComponents):
                         for i, node in enumerate(self.Mesh.FreeNodes):
                                 sol[node, n] = x[i,n]
-                        for node in self.Mesh.DirNodes:
-                                p = self.Mesh.Nodes[node]
+                        if self.Mesh.NumDirNodes:
                                 gDir = self.setDirFunc(Mesh = self.Mesh)[n]
-                                sol[node,n] = gDir(p)
+                                for node in self.Mesh.DirNodes:
+                                        p = self.Mesh.Nodes[node]
+                                        sol[node,n] = gDir(p)
                 
                 return sol
 

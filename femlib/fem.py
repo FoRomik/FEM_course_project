@@ -7,7 +7,7 @@ import scipy.io as sio
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.tri as mpl_tri
-
+import matplotlib.animation as animation
 
 def importInitMesh(matfile = None):
         # import mesh data from matlab data file
@@ -15,6 +15,7 @@ def importInitMesh(matfile = None):
 	points = data['p']
 	edges = data['e']
 	triangles = data['t']
+	diam = data['diam'][0][0]
 	
 	# convert to python format
 	points = np.transpose(points)
@@ -24,6 +25,7 @@ def importInitMesh(matfile = None):
 	points = points.astype('float')
 	triangles = triangles.astype('int')
 	edges = edges.astype('int')
+	diam = diam.astype('float')
 
 	# fix array index numbering for python
 	for i in range(len(triangles)):
@@ -36,7 +38,7 @@ def importInitMesh(matfile = None):
                 edges[i,1] -=1 
                 edges[i] = edges[i][np.argsort(edges[i])]
 
-	return (points, triangles, edges)	
+	return (points, triangles, edges, diam)	
 
 
 class Mesh:
@@ -44,6 +46,7 @@ class Mesh:
 		self.Nodes = K0[0]
 		self.Elements = K0[1]
 		self.BoundaryEdges = K0[2]
+		self.Diam = K0[3]
 		self.DirEdges = None
 		self.NeumannEdges = None
 		
@@ -52,6 +55,7 @@ class Mesh:
 		self.NumBoundaryEdges = len(self.BoundaryEdges)
 		self.NumDirEdges = 0
 		self.NumNeumannEdges = 0
+		self.NumDirNodes = 0
 		self.EdgeMatrix = np.zeros([self.NumNodes, self.NumNodes], np.int32) 	
 		
 		for element in self.Elements:
@@ -377,19 +381,21 @@ class Plot:
 		 		              linewidth = 1, marker = 'o', markersize = 5, color = 'red') 
 
 
-	def patternPlot(self, u_Node, Component = 0, showGrid = False):
-		u_Node = u_Node[:,Component].flatten()		
+	def patternPlot(self, u, Component = 0, showGrid = False):
+		if not len(u.shape) == 1: u = u[:,Component].flatten()		
 		t = mpl_tri.Triangulation(self.Mesh.Nodes[:,0], self.Mesh.Nodes[:,1], self.Mesh.Elements)
-		pattern = self.ax.tripcolor(t, u_Node, shading='interp1', cmap=plt.cm.jet)
+		pattern = self.ax.tripcolor(t, u, shading='interp1', cmap=plt.cm.jet)
 		cbar = plt.colorbar(pattern, ax = self.ax)
-	        cbar.set_clim(vmin = u_Node.min(), vmax = u_Node.max())
+	        cbar.set_clim(vmin = u.min(), vmax = u.max())
 	        cbar.draw_all()
-		if showGrid: self.plotMesh()
+		if showGrid: self.plotBoundaries()
 		
 		
-	def patternAnimate(self, dataFileList, Component = 0, delay = 0.5):
+	def patternAnimate(self, dataFileList, Component = 0, delay = None):
 	        t = mpl_tri.Triangulation(self.Mesh.Nodes[:,0], self.Mesh.Nodes[:,1], self.Mesh.Elements)
-	        u0 = np.loadtxt(dataFileList[0])[:,Component].flatten()
+                
+                u0 = np.loadtxt(dataFileList[0])
+                if not len(u0.shape) == 1: u0 = u0[:,Component].flatten()
 	        u0 = u0[:self.Mesh.NumNodes]
 	        
 	        for i, dataFile in enumerate(dataFileList):
@@ -400,11 +406,20 @@ class Plot:
 	                cbar.draw_all()
 	                self.ax.set_title('Time = %d'% i)
 	             else:
-	                u = np.loadtxt(dataFile).flatten()
+	                u = np.loadtxt(dataFile)
+	                if not len(u.shape) == 1: u = u[:,Component].flatten()
 	                u = u[:self.Mesh.NumNodes]
-	                pattern.set_array(u)
+	                #pattern.set_array(u)
+	                pattern = self.ax.tripcolor(t, u, shading = 'interp1', cmap = plt.cm.jet)
 	                cbar.set_clim(vmin = u.min(), vmax = u.max())
 	                cbar.draw_all()
 	                self.ax.set_title('Time = %d' % i)
-	             plt.pause(delay)
+	             
+	             self.ax.hold(False)   
+	             if not delay: plt.waitforbuttonpress()
+	             else: plt.pause(delay)
+	             
+                
+                
+                
 		     
