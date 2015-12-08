@@ -391,7 +391,7 @@ class Plot:
 		if showGrid: self.plotBoundaries()
 		
 		
-	def patternAnimate(self, dataFileList, Component = 0, delay = None):
+	def patternAnimate(self, dataFileList, Component = 0, delay = None, makeMovie = True, frameRate = 10, Prefix = 'pattern'):
 	        t = mpl_tri.Triangulation(self.Mesh.Nodes[:,0], self.Mesh.Nodes[:,1], self.Mesh.Elements)
                 
                 u0 = np.loadtxt(dataFileList[0])
@@ -400,7 +400,7 @@ class Plot:
 	        
 	        for i, dataFile in enumerate(dataFileList):
 	             if i == 0:
-	                pattern = self.ax.tripcolor(t, u0, shading = 'interp1', cmap = plt.cm.jet)
+	                pattern = self.ax.tripcolor(t, u0, shading = 'interp1', cmap = plt.cm.coolwarm)
 	                cbar = plt.colorbar(pattern, ax = self.ax)
 	                cbar.set_clim(vmin = u0.min(), vmax = u0.max())
 	                cbar.draw_all()
@@ -409,17 +409,17 @@ class Plot:
 	                u = np.loadtxt(dataFile)
 	                if not len(u.shape) == 1: u = u[:,Component].flatten()
 	                u = u[:self.Mesh.NumNodes]
-	                #pattern.set_array(u)
-	                pattern = self.ax.tripcolor(t, u, shading = 'interp1', cmap = plt.cm.jet)
-	                cbar.set_clim(vmin = u.min(), vmax = u.max())
+	                pattern = self.ax.tripcolor(t, u, shading = 'interp1', cmap = plt.cm.coolwarm)
+	                cbar.set_clim(vmin = u0.min(), vmax = u0.max())
 	                cbar.draw_all()
 	                self.ax.set_title('Time = %d' % i)
 	             
 	             self.ax.hold(False)   
 	             if not delay: plt.waitforbuttonpress()
 	             else: plt.pause(delay)
+	             if makeMovie: plt.savefig('tmp%d.png' % i)
 	             
-                
-                
-                
-		     
+                if makeMovie:
+                        os.system("ffmpeg -r " + str(frameRate) + " -b 1800 -i tmp%d.png " + Prefix + ".mp4")
+                        os.system('rm tmp*.png')
+                		     

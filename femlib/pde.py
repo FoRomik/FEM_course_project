@@ -179,7 +179,7 @@ class PDE:
                                         p = self.Mesh.Nodes[node]
                                         sol[node,n] = gDir(p)
                 
-                return sol
+                return sol       
 
 
                                                        

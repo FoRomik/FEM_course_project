@@ -329,18 +329,11 @@ def testLinDiffRxn():
         K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0)
         
-        NComponents = 1
-
         # set boundary conditions
         ## Neumann
         m.NeumannEdges = m.BoundaryEdges
         m.NumNeumannEdges = len(m.NeumannEdges)
         def gNeumann(Mesh = m): return [lambda p: 0.]
-        
-        ## Dirichlet
-        #m.DirEdges = m.BoundaryEdges
-        #m.NumDirEdges = len(m.DirEdges)
-        #def gDir(Mesh = m): return [lambda p: -1]
         
         # get boundary partition
         m.partitionNodes()
@@ -356,37 +349,40 @@ def testLinDiffRxn():
         def fsrc(Mesh = m):  return [lambda p: 0.]
                                
         # assemble LHS of final lin. alg problem
-        def makeBlockMat(x): return x
+        SDC = 10000. #(Diffusion coefficient bumped up for quick diffusion)
+        def makeBlockMat(x): return SDC * x
         def getlhs(K,M): return M
         
         # define the PDE
-        pde = Parabolic(NComponents = NComponents, Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat)
+        pde = Parabolic(Mesh = m, StiffMat = a.globalStiffMat, MassMat = a.globalMassMat)
         pde.setNeumannFunc = gNeumann
-        #pde.setDirFunc = gDir
         pde.setSrcFunc = fsrc
         pde.AssembBlockStiffMat = makeBlockMat
         pde.AssembBlockMassMat = makeBlockMat
         pde.AssembLHS = getlhs
         
         # initial condition
-        f0 = [lambda p: 1. if np.sqrt(p[0]**2 + p[1]**2) <= 0.01 else 0.]
+        f0 = [lambda p: 1. if np.sqrt(p[0]**2 + p[1]**2) <=0.1 else 0.]
              
-        u0 = np.zeros([m.NumNodes, NComponents])
+        u0 = np.zeros([m.NumNodes, 1])
         for i, node in enumerate(m.Nodes):
-                for n in range(NComponents):
-                        u0[i,n] = f0[n](node)
+                        u0[i,0] = f0[0](node)
         
         # start time loop
         import linsolv
         K_free = makeBlockMat(pde.getFreeNodeArray(K))
         outfile_fmt = os.path.join(testdata_dir, 'testdiffrxn%d.dat')
         np.savetxt(outfile_fmt % 0, u0)
-        dt = (1-0.5) * m.Diam**2 / 6. 
+        dt = 0.5e-3
         
-        print "dt = ", dt ; raw_input()
+        print "dt = ", dt 
+        print "Mesh size = ", m.Diam
+        print "Characteristic time step # = ", int((1./SDC)/dt)
+        raw_input('Press any key to start time loop')
         
         NSteps = 100
         u_old = u0
+        err = []
         loop = True
         if loop:
                 for i in range(NSteps):
@@ -395,27 +391,33 @@ def testLinDiffRxn():
                         M_free, vecs = pde.AssembPDE()
                         F = vecs[0]; G = vecs[1]; D = vecs[2]
                         x_old = pde.wrapSol(u_old)
-                        rhs = linsolv.mul(a = M_free, b = x_old) - dt * linsolv.mul(a = K_free, b = x_old) + dt * F 
-                              #+ dt * G - linsolv.mul(a = M_free, b = D)
+                        rhs = linsolv.mul(a = M_free, b = x_old) - dt * linsolv.mul(a = K_free, b = x_old) + dt * F + \
+                              dt * G - linsolv.mul(a = M_free, b = D)
                         x_new = pde.Solve(M_free, rhs)
                         u_new = pde.unwrapSol(x_new)
                         
                         # write to file and update
                         np.savetxt(outfile_fmt%(i+1), u_new)     
+                        err.append(abs(x_new - x_old).max())
                         u_old = u_new
                   
         # pattern animations
+        print '\nTime stepping ended...'
         raw_input('Press any key to start animation...')
         p = Plot(Mesh = m)
-        fig = plt.figure(figsize = (5,5), facecolor = 'w', edgecolor = 'w')
-        nrows = 1; ncols = NComponents
+        fig = plt.figure(figsize = (7,5), facecolor = 'w', edgecolor = 'w')
         datafilelist = []
         [datafilelist.append(outfile_fmt % x) for x in range(NSteps)]
-        for n in range(NComponents):
-                ax = fig.add_subplot(nrows, ncols, n+1)
-        	p.ax = ax
-        	p.patternAnimate(dataFileList = datafilelist, Component = n, delay = None)
+        ax = fig.add_subplot(1, 1, 1)
+        p.ax = ax
+        p.patternAnimate(dataFileList = datafilelist, Component = 0, delay = 0.01,
+                         frameRate = 10, Prefix = '../testdata/testdiff')
 
+        # plot convergence
+        fig_err = plt.figure(figsize = (7,5), facecolor = 'w', edgecolor = 'w')
+        ax_err = fig_err.add_subplot(1,1,1)
+        ax_err.set_xlabel('Timestep', fontsize = 'large'); ax_err.set_ylabel('Convergence', fontsize = 'large')
+        ax_err.plot(err)
 #============================================================================================================================================================
 
 if __name__ == '__main__':
