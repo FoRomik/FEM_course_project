@@ -7,6 +7,7 @@ import scipy as scp
 from scipy import stats
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.tri as tri
 from fem import *
 from pde import *
 
@@ -31,7 +32,8 @@ def testMesh():
 	print m.DirNodes
 	print m.FreeNodes
 	
-	ax1 = plt.subplot(121); ax2 = plt.subplot(122)
+	fig = plt.figure(figsize = (7,5), facecolor = 'w', edgecolor = 'w')
+	ax1 = fig.add_subplot(121); ax2 = fig.add_subplot(122)
 	p = Plot(Mesh = m)
 	p.ax = ax1; p.plotBoundaries()
 	
@@ -45,7 +47,7 @@ def testMesh():
 def testShapeFnPlot():	
         K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
-	fig = plt.figure()
+	fig = plt.figure(figsize = (7,5), facecolor = 'w', edgecolor = 'w')
 	ax3d = Axes3D(fig)
 	Node = m.Nodes[22]
 	p = Plot(Mesh = m, ax = ax3d)
@@ -56,12 +58,13 @@ def testPatternPlot():
 	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	m.refineMesh();m.refineMesh()
-	ax = plt.subplot(111)
+	fig = plt.figure(figsize = (7,5), facecolor = 'w', edgecolor = 'w')
+	ax = fig.add_subplot(111)
 	u = np.zeros(m.NumNodes)
 	for i in range(m.NumNodes):
 		u[i] = np.cos(m.Nodes[i,0] + m.Nodes[i,1])
 	p = Plot(Mesh = m, ax = ax)
-	p.patternPlot(u_Node = u)
+	p.patternPlot(u = u)
 
 #=============================================================================================================================================================
 def testElementMat():
@@ -138,17 +141,15 @@ def testAssembly():
         pde.AssembBlockMassMat = makeBlock 
         pde.AssembLHS = getLHS
         dirbc = pde.getDirBC()
-        ret = pde.AssembPDE()
-        A = ret['LHS_Mat']
-        b0 = ret['RHSVec_Src']; b1 = ret['RHSVec_Neumann']; b2 = ret['RHSVec_Dir']
+        A, b = pde.AssembPDE()
         
         print '\n\n================CHECK ASSEMBLED LHS MATRIX===================\n\n'
         print "DirBC = ", dirbc
         print "A = ", A
-        print "b =", b0+b1-b2
+        print "b =", b[0]+b[1]-b[2]
         print "DirBCSize = ", dirbc.shape
         print "ASize = ", A.shape
-        print "bsize =", b0.shape, b1.shape, b2.shape
+        print "bsize =", b[0].shape, b[1].shape, b[2].shape
         
 #=============================================================================================================================================================        
 def testLinSolver():
@@ -159,9 +160,12 @@ def testLinSolver():
         b = np.random.random((10,1))
         fort_sol = sol.Solve(A,b)
         numpy_sol = np.linalg.solve(A,b)
-        print 'Fortran -- ', fort_sol
+        print 'Solving the system .. Ax = b'
+        print 'A = \t', A
+        print 'b= \t', b
+        print 'Fortran DGSEV solution \t ', fort_sol
         print '\n\n----------------------\n\n'
-        print 'Numpy -- ', numpy_sol
+        print 'Numpy solution \t ', numpy_sol
         
 #=============================================================================================================================================================         
 def testPoisson(meshmatfile = 'testinitmesh.mat', showPlot = True):
@@ -171,16 +175,11 @@ def testPoisson(meshmatfile = 'testinitmesh.mat', showPlot = True):
         
         # linear uncoupled elliptic test problems
         #1) u1(x,y) = 1 -x - y
-        #2) u2(x,y) = (1 - x^2 - y^2)/4
-        #3) u3(x,y) = (1 - x^4 - y^4)/12
+        #2) u2(x,y) = (1 - x^3 - y^3)/6
         
         f = [lambda p: (1 - p[0] - p[1]),  
-             lambda p: (1. - p[0]**2. - p[1]**2.)/4.,
-             lambda p: (1. - p[0]**3. - p[1]**3.)/6.,
-             lambda p: (1. - p[0]**4. - p[1]**4.)/12.,
-             lambda p: (1. - p[0]**5. - p[1]**5.)/20.]
+             lambda p: (1. - p[0]**3. - p[1]**3.)/6.]
              
-        
         NComponents = len(f)
         
         # set boundary conditions
@@ -201,10 +200,7 @@ def testPoisson(meshmatfile = 'testinitmesh.mat', showPlot = True):
         # set source function
         def fsrc(Mesh = m): 
                 return [lambda p: 0., 
-                        lambda p: 1.,
-                        lambda p: p[0] + p[1],
-                        lambda p: p[0]**2. + p[1]**2.,
-                        lambda p: p[0]**3. + p[1]**3.]
+                        lambda p: p[0] + p[1]]
                                
         # assemble LHS of final lin. alg problem
         def makeBlockMat(x):
@@ -324,13 +320,12 @@ def testErrorScaling():
 	print "L1 error order = ", slopeL1
 
 #=============================================================================================================================================================
-def testLinDiffRxn():    
+def testLinDiff():    
         # init mesh
         K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
         m = Mesh(K0)
         
-        # set boundary conditions
-        ## Neumann
+        # set zero Neumann boundary conditions
         m.NeumannEdges = m.BoundaryEdges
         m.NumNeumannEdges = len(m.NeumannEdges)
         def gNeumann(Mesh = m): return [lambda p: 0.]
@@ -360,18 +355,16 @@ def testLinDiffRxn():
         pde.AssembBlockStiffMat = makeBlockMat
         pde.AssembBlockMassMat = makeBlockMat
         pde.AssembLHS = getlhs
+        import linsolv
+        K_free = makeBlockMat(pde.getFreeNodeArray(K))
         
         # initial condition
         f0 = [lambda p: 1. if np.sqrt(p[0]**2 + p[1]**2) <=0.1 else 0.]
-             
         u0 = np.zeros([m.NumNodes, 1])
-        for i, node in enumerate(m.Nodes):
-                        u0[i,0] = f0[0](node)
+        for i, node in enumerate(m.Nodes): u0[i,0] = f0[0](node)
         
-        # start time loop
-        import linsolv
-        K_free = makeBlockMat(pde.getFreeNodeArray(K))
-        outfile_fmt = os.path.join(testdata_dir, 'testdiffrxn%d.dat')
+        # start time loop 
+        outfile_fmt = os.path.join(testdata_dir, 'testdiff%d.dat')
         np.savetxt(outfile_fmt % 0, u0)
         dt = 0.5e-3
         
@@ -421,14 +414,13 @@ def testLinDiffRxn():
 #============================================================================================================================================================
 
 if __name__ == '__main__':
-	#testMesh()
-	#testShapeFnPlot()
-	#testPatternPlot()
-	#testShapeFnPlot()		
-	#testAssembly()
-	#testLinSolver()
-	#testPoisson()
+	testMesh()
+	testShapeFnPlot()
+	testPatternPlot()
+	testAssembly()
+	testLinSolver()
+	testPoisson()
 	#testErrorScaling()
-	testLinDiffRxn()
+	testLinDiff()
 
 plt.show()
