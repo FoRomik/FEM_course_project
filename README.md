@@ -1,4 +1,5 @@
 # FEM_course_project
+This started as a term project for the course 206D, Finite Element Methods. 
 # Contents: femlib - a library with modules fem and pde. 
 
 # fem : 
