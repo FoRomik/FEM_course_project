@@ -1,5 +1,12 @@
 #!/usr/bin/env python
 
+
+#######################################################################################
+# AUTHOR: Tanmoy Sanyal, Shell group, Chemical Engineering Department, UC Santa Barbara
+# test bench for fem and pde modules
+#######################################################################################
+
+
 import os
 
 import numpy as np
