@@ -3,7 +3,7 @@
 #######################################################################################
 # AUTHOR: Tanmoy Sanyal, Shell group, Chemical Engineering Department, UC Santa Barbara
 # USAGE: python simpattern.py m n k save_location
-# m, n --> integer (currently only the following values supported: (0,1), (2,1), (3,3)
+# m, n --> integer (currently only the following values supported: (0,1), (1,1), (3,3)
 # k --> float
 # save_location --> string
 #######################################################################################
