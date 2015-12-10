@@ -1,5 +1,11 @@
 #!/usr/bin/env python
 
+#######################################################################################
+# AUTHOR: Tanmoy Sanyal, Shell group, Chemical Engineering Department, UC Santa Barbara
+# class and function definitions for assembling different families of PDEs
+#######################################################################################
+
+
 import os
 import numpy as np
 import fem
@@ -92,7 +98,7 @@ class PDE:
                 for i, node in enumerate(self.Mesh.Nodes):
                         f = self.setSrcFunc()
                         for n in range(self.NComponents):
-                                ret[i,n] = f[n](node) 
+                                ret[i,n] = f[n](node, self.Mesh, self.u[i,:])
                 return ret        
 
             
