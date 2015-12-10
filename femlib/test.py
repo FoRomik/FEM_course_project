@@ -8,16 +8,25 @@ from scipy import stats
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.tri as tri
+
 from fem import *
 from pde import *
 
+MATLAB_EXEC = 'matlab'
+testdata_dir = '../testdata'
+if not os.path.isdir(testdata_dir): os.mkdir(testdata_dir)
 
-testdata_dir = '/home/tanmoy/projects/FEM_course_project/code/testdata'
 
-
+# before using this test bench the matlab script genMesh.m should be run to produce the testinitmesh.mat which 
+# is used as the initial mesh for most of the tests here. It can be called from the command line though
+initmeshfile = os.path.join(testdata_dir, 'testinitmesh.mat')
+if not os.path.isfile(initmeshfile):
+        cmdstring = '''%s -nojvm -nodisplay -nosplash -r "genMesh(%g, '%s'); exit" ''' % (MATLAB_EXEC, 0.1, initmeshfile)
+        os.system(cmdstring)
+        
 #=============================================================================================================================================================
 def testMesh():
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
+        K0 = importInitMesh(matfile = initmeshfile)
         m = Mesh(K0)
         
         m.NeumannEdges = m.BoundaryEdges 
@@ -25,6 +34,9 @@ def testMesh():
         m.NeumannEdges = np.delete(m.NeumannEdges, 14, 0)
         m.NumNeumannEdges = len(m.NeumannEdges)
        
+        print m.NumNodes
+        print m.NumElements
+        
         m.DirEdges = np.array([[0,8], [0,15]])
         m.NumDirEdges = len(m.DirEdges)
         
@@ -45,17 +57,17 @@ def testMesh():
 
 #=============================================================================================================================================================
 def testShapeFnPlot():	
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
+        K0 = importInitMesh(matfile = initmeshfile)
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	fig = plt.figure(figsize = (7,5), facecolor = 'w', edgecolor = 'w')
 	ax3d = Axes3D(fig)
-	Node = m.Nodes[22]
+	Node = m.Nodes[50]
 	p = Plot(Mesh = m, ax = ax3d)
 	p.plotShapeFunc(Node)  
 
 #=============================================================================================================================================================
 def testPatternPlot():
-	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
+	K0 = importInitMesh(matfile = initmeshfile)
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	m.refineMesh();m.refineMesh()
 	fig = plt.figure(figsize = (7,5), facecolor = 'w', edgecolor = 'w')
@@ -68,7 +80,7 @@ def testPatternPlot():
 
 #=============================================================================================================================================================
 def testElementMat():
-	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
+	K0 = importInitMesh(matfile =initmeshfile)
         m = Mesh(K0); m.NeumannEdges = m.BoundaryEdges ;  m.NumNeumannEdges = len(m.NeumannEdges)
 	T = m.Elements[22]	
 	s = ShapeFn(Mesh = m, Element = T)
@@ -85,7 +97,7 @@ def testElementMat():
 
 #=============================================================================================================================================================
 def testAssembly():
-	K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
+	K0 = importInitMesh(matfile = initmeshfile)
         m = Mesh(K0)
 	
 	m.NeumannEdges = m.BoundaryEdges 
@@ -153,7 +165,7 @@ def testAssembly():
         
 #=============================================================================================================================================================        
 def testLinSolver():
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
+        K0 = importInitMesh(matfile = initmeshfile)
         m = Mesh(K0)
         sol = PDE(Mesh = m)
         A = np.random.random((10,10))
@@ -168,20 +180,18 @@ def testLinSolver():
         print 'Numpy solution \t ', numpy_sol
         
 #=============================================================================================================================================================         
-def testPoisson(meshmatfile = 'testinitmesh.mat', showPlot = True):
+def testPoisson(meshmatfile = initmeshfile, showPlot = True):
         # init mesh
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, meshmatfile))
+        K0 = importInitMesh(matfile = meshmatfile)
         m = Mesh(K0)
         
-        # linear uncoupled elliptic test problems
-        #1) u1(x,y) = 1 -x - y
-        #2) u2(x,y) = (1 - x^3 - y^3)/6
+        # elliptic test problem: u(x,y) = 1 -x - y
+        # for other test functions, please change the lambda function f 
+        # and the lambda function in fsrc
         
-        f = [lambda p: (1 - p[0] - p[1]),  
-             lambda p: (1. - p[0]**3. - p[1]**3.)/6.]
+        NComponents = 1
+        f = [lambda p: (1 - p[0] - p[1])/1.]
              
-        NComponents = len(f)
-        
         # set boundary conditions
         m.DirEdges = m.BoundaryEdges
         m.NumDirEdges = len(m.DirEdges)
@@ -198,26 +208,10 @@ def testPoisson(meshmatfile = 'testinitmesh.mat', showPlot = True):
         M = a.globalMassMat
         
         # set source function
-        def fsrc(Mesh = m): 
-                return [lambda p: 0., 
-                        lambda p: p[0] + p[1]]
+        def fsrc(Mesh = m):  return [lambda p: 0.]
                                
         # assemble LHS of final lin. alg problem
-        def makeBlockMat(x):
-                zero = np.zeros([x.shape[0], x.shape[1]])
-                block = []
-                for i in range(NComponents):
-                        row = []
-                        for j in range(NComponents):
-                                if i == j: col = x
-                                else: col = zero
-                                row.append(col)
-                        block.append(row)
-                        
-                block = np.array(np.bmat(block))
-          
-                return block
-         
+        def makeBlockMat(x): return x
         def getlhs(K,M): return K
         
         # define the PDE
@@ -236,93 +230,77 @@ def testPoisson(meshmatfile = 'testinitmesh.mat', showPlot = True):
         # solve the lin alg problem naively
         x = pde.Solve(A,b)
         
-        # construct the full solution 
+        # construct the full FEM solution 
         u = pde.unwrapSol(x)
 
-        u_ex = np.zeros([m.NumNodes, NComponents])
-        for i in range(m.NumNodes):
-                for n in range(NComponents):
-                        p = m.Nodes[i]
-                        u_ex[i,n] = f[n](p)
+        # construc the full initial solution
+        u_ex = np.zeros([m.NumNodes, 1])
+        for i in range(m.NumNodes): u_ex[i,0] = f[0](m.Nodes[i])
         
         # plot the solution and compare with analytical sol
+        # general plot script for N components
         if showPlot:
                 p = Plot(Mesh = m)
-	        fig = plt.figure(figsize = (12,8), facecolor = 'w', edgecolor = 'w')
-        	nrows = NComponents ; ncols = 3
-        	for n in range(NComponents):
-        	        ind_ex =  3*n+1
-        	        ind_fem = 3*n+2
-        	        ind_err = 3*n+3
-        	        ax1 = fig.add_subplot(nrows, ncols, ind_ex)
-        	        ax2 = fig.add_subplot(nrows, ncols, ind_fem)
-        	        ax3 = fig.add_subplot(nrows, ncols, ind_err)
-        	        if n == 0:
-        	                ax1.set_title(r'$u_{exact}$', fontsize = 'xx-large', fontweight = 'bold')
-        	                ax2.set_title(r'$u_{FEM}$', fontsize = 'xx-large', fontweight = 'bold')
-        	                ax3.set_title(r'$u_{exact} - u_{FEM}$', fontsize = 'xx-large', fontweight = 'bold')
-        	        else:
-        	                ax1.set_title('')
-        	                ax2.set_title('')
-        	                ax3.set_title('')
-        	
-        	        p.ax = ax1; p.patternPlot(u_ex, n)
-        	        p.ax = ax2; p.patternPlot(u, n)
-        	        p.ax = ax3; p.patternPlot(u_ex - u, n)
+	        fig = plt.figure(figsize = (16,4), facecolor = 'w', edgecolor = 'w')
+        	ax1 = fig.add_subplot(1, 3, 1)
+        	ax2 = fig.add_subplot(1, 3, 2)
+        	ax3 = fig.add_subplot(1, 3, 3)
+                ax1.set_title(r'$u_{exact}$', fontsize = 'xx-large', fontweight = 'bold')
+        	ax2.set_title(r'$u_{FEM}$', fontsize = 'xx-large', fontweight = 'bold')
+        	ax3.set_title(r'$u_{exact} - u_{FEM}$', fontsize = 'xx-large', fontweight = 'bold')
+        	p.ax = ax1; p.patternPlot(u_ex)
+        	p.ax = ax2; p.patternPlot(u)
+        	p.ax = ax3; p.patternPlot(u_ex - u)
 	
 	                
-	# calculate error norms
-	L2err = np.zeros(pde.NComponents); L1err = np.zeros(pde.NComponents)
-	for n in range(pde.NComponents):
-	        L2err[n] =np.linalg.norm(u[:,n].flatten(order = 'F') -u_ex[:,n].flatten(order = 'F'), ord = 2)
-	        L1err[n] = np.linalg.norm(u[:,n].flatten(order = 'F') -u_ex[:,n].flatten(order = 'F'), ord = np.inf)
-	               
-	return (L2err, L1err)
+	# calculate error norm
+	L2err  = np.linalg.norm(u -u_ex)
+	print 'L2 error = ', L2err
+
+	return L2err
 	
 #=============================================================================================================================================================
-def testErrorScaling():
+def testPoissonErrorScaling():
 	meshmatfile_fmt = 'testmesh%d.mat'
-	hmax = np.linspace(0.1,0.25,21)
+	hmax = np.array([0.04, 0.06, 0.08, 0.1, 0.4, 0.5, 0.8])
 	N = len(hmax)
-	err = np.zeros([N,2])
+	err = np.zeros(N)
 	for i in range(N):
 	        h = hmax[i]
-	        print 'Solving system for mesh size = ', h
-	        meshmatfile = meshmatfile_fmt % i
-	        (L2_err, L1_err) = testPoisson(meshmatfile, showPlot = False)
-	        err[i,0] = L2_err[0]; err[i,1] = L1_err[0]
-	
+	        print '\n\nGenerating mesh of size  = ', h
+	        meshmatfile = os.path.join(testdata_dir, meshmatfile_fmt % i)
+	        if not os.path.isfile(meshmatfile):
+	                cmdstring = '''%s -nojvm -nodisplay -nosplash -r "genMesh(%g, '%s'); exit" ''' % (MATLAB_EXEC, h, meshmatfile)
+        	        os.system(cmdstring)
+	        print 'Solving Poisson problem on mesh of size = ', h
+	        err[i] = testPoisson(meshmatfile = meshmatfile, showPlot = False)
+	      
+	# fit straight line to error data
+	print err ; raw_input()
 	logh = np.log10(1./hmax)
-	logL2err = np.log10(err[:,0]); logL1err = np.log10(err[:,1])
-	statoutL2 = stats.linregress(logh, logL2err); statoutL1 = stats.linregress(logh, logL1err)
-	slopeL2 = statoutL2[0]; interceptL2 = statoutL2[1]
-	slopeL1 = statoutL1[0]; interceptL1 = statoutL1[1]
-	logL2err_fit = slopeL2*logh + interceptL2
-	logL1err_fit = slopeL1*logh + interceptL1
+	logerr = np.log10(err)
+	statout = stats.linregress(logh, logerr)
+	slope = statout[0]; intercept = statout[1]
+	fit = slope*logh + intercept
 	
-	fig = plt.figure(figsize = (8,4), facecolor = 'w', edgecolor = 'w')
-	ax1 = fig.add_subplot(121)
-	ax1.scatter(logh, logL2err, marker = 'o', color = 'red')
-	ax1.plot(logh, logL2err_fit, color = 'black')
+	fig = plt.figure(figsize = (7,5), facecolor = 'w', edgecolor = 'w')
+	ax = fig.add_subplot(1,1,1)
+	ax.scatter(logh, logerr, marker = 'o', color = 'red')
+	ax.plot(logh, fit, color = 'black')
 	
-	ax2 = fig.add_subplot(122)
-	ax2.scatter(logh, logL1err, marker = 'o', color = 'red')
-	ax2.plot(logh, logL1err_fit, color = 'black')
+	ax.set_xlabel(r'$log(\frac{1}{h})$', fontsize = 'large')
+	ax.set_ylabel(r'$log(\epsilon_{L_2})$', fontsize = 'large')
 	
-	ax1.set_xlabel(r'$log(\frac{1}{h})$', fontsize = 'large')
-	ax1.set_ylabel(r'$log(\epsilon_{L_2})$', fontsize = 'large')
-	ax2.set_xlabel(r'$log(h)$', fontsize = 'large')
-	ax2.set_ylabel(r'$log(\epsilon_{L_1})$', fontsize = 'large')
+	print "L2 error order = ", slope
 	
-	plt.subplots_adjust(wspace = 0.5, bottom = 0.2, left = 0.12)
+	# cleanup
+	[os.remove('../testdata/testmesh%d.mat' % i) for i in range(N)]
 	
-	print "L2 error order = ", slopeL2
-	print "L1 error order = ", slopeL1
 
 #=============================================================================================================================================================
 def testLinDiff():    
         # init mesh
-        K0 = importInitMesh(matfile = os.path.join(testdata_dir, 'testinitmesh.mat'))
+        K0 = importInitMesh(matfile = initmeshfile)
         m = Mesh(K0)
         
         # set zero Neumann boundary conditions
@@ -341,10 +319,10 @@ def testLinDiff():
         M = a.globalMassMat
         
         # set source function
-        def fsrc(Mesh = m):  return [lambda p: 0.]
+        def fsrc(Mesh = m):  return [lambda p,m,u : 0.]
                                
         # assemble LHS of final lin. alg problem
-        SDC = 10000. #(Diffusion coefficient bumped up for quick diffusion)
+        SDC = 100. # Diffusion coefficient bumped up for quick diffusion
         def makeBlockMat(x): return SDC * x
         def getlhs(K,M): return M
         
@@ -409,18 +387,18 @@ def testLinDiff():
         # plot convergence
         fig_err = plt.figure(figsize = (7,5), facecolor = 'w', edgecolor = 'w')
         ax_err = fig_err.add_subplot(1,1,1)
-        ax_err.set_xlabel('Timestep', fontsize = 'large'); ax_err.set_ylabel('Convergence', fontsize = 'large')
+        ax_err.set_xlabel('Timestep', fontsize = 'xx-large'); ax_err.set_ylabel('Convergence to steady state', fontsize = 'xx-large')
         ax_err.plot(err)
 #============================================================================================================================================================
 
 if __name__ == '__main__':
-	testMesh()
-	testShapeFnPlot()
-	testPatternPlot()
-	testAssembly()
-	testLinSolver()
-	testPoisson()
-	#testErrorScaling()
+	#testMesh()
+	#testShapeFnPlot()
+	#testPatternPlot()
+	#testAssembly()
+	#testLinSolver()
+	#testPoisson()
+	#testPoissonErrorScaling()
 	testLinDiff()
 
 plt.show()

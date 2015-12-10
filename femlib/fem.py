@@ -1,9 +1,17 @@
 #!/usr/bin/env python
 
+#######################################################################################
+# AUTHOR: Tanmoy Sanyal, Shell group, Chemical Engineering Department, UC Santa Barbara
+# class and method definitions for meshing and finite element calculations of stiffness,
+# mass and source terms on linear Lagrange elements
+#######################################################################################
+
+
 import os, time
 import numpy as np
 import scipy.io as sio
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 import matplotlib.tri as mpl_tri
@@ -398,9 +406,10 @@ class Plot:
                 if not len(u0.shape) == 1: u0 = u0[:,Component].flatten()
 	        u0 = u0[:self.Mesh.NumNodes]
 	        
-	        for i, dataFile in enumerate(dataFileList):
+	        for i  in range(len(dataFileList)):
+	             dataFile = dataFileList[i]
 	             if i == 0:
-	                pattern = self.ax.tripcolor(t, u0, shading = 'interp1', cmap = plt.cm.coolwarm)
+	                pattern = self.ax.tripcolor(t, u0, shading = 'interp1', cmap = plt.cm.jet)
 	                cbar = plt.colorbar(pattern, ax = self.ax)
 	                cbar.set_clim(vmin = u0.min(), vmax = u0.max())
 	                cbar.draw_all()
@@ -409,8 +418,8 @@ class Plot:
 	                u = np.loadtxt(dataFile)
 	                if not len(u.shape) == 1: u = u[:,Component].flatten()
 	                u = u[:self.Mesh.NumNodes]
-	                pattern = self.ax.tripcolor(t, u, shading = 'interp1', cmap = plt.cm.coolwarm)
-	                cbar.set_clim(vmin = u0.min(), vmax = u0.max())
+	                pattern = self.ax.tripcolor(t, u, shading = 'interp1', cmap = plt.cm.jet)
+	                cbar.set_clim(vmin = u.min(), vmax = u.max())
 	                cbar.draw_all()
 	                self.ax.set_title('Time = %d' % i)
 	             
@@ -418,8 +427,9 @@ class Plot:
 	             if not delay: plt.waitforbuttonpress()
 	             else: plt.pause(delay)
 	             if makeMovie: plt.savefig('tmp%d.png' % i)
-	             
+	           
                 if makeMovie:
+                        print 'Rendering...'
                         os.system("ffmpeg -r " + str(frameRate) + " -b 1800 -i tmp%d.png " + Prefix + ".mp4")
                         os.system('rm tmp*.png')
                 		     
